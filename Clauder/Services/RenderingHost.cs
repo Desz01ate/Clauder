@@ -9,15 +9,23 @@ using Spectre.Console;
 using Spectre.Console.Rendering;
 using static Concur.ConcurRoutine;
 
+internal record struct ToastInfo(string Message, DateTime Time, ToastType Type, TimeSpan Duration);
+
 public sealed class RenderingHost : IDisposable
 {
     private readonly ChannelReader<NavigationCommand> _navigationReader;
+    private readonly ChannelReader<ToastCommand> _toastReader;
     private readonly IPageFactory _pageFactory;
     private readonly INavigationContext _navigationContext;
+    private readonly IToastContext _toastContext;
     private readonly Stack<IPage> _pageStack = new();
     private CancellationTokenSource? _currentPageCancellation;
-    private string? _lastErrorMessage;
-    private DateTime? _lastErrorTime;
+
+    #region Toast handling
+
+    private ToastInfo? _lastToast;
+
+    #endregion
 
     private static IRenderable EmptyErrorDisplay => new Markup(string.Empty);
 
@@ -36,12 +44,16 @@ public sealed class RenderingHost : IDisposable
 
     public RenderingHost(
         ChannelReader<NavigationCommand> navigationReader,
+        ChannelReader<ToastCommand> toastReader,
         IPageFactory pageFactory,
-        INavigationContext navigationContext)
+        INavigationContext navigationContext,
+        IToastContext toastContext)
     {
         this._navigationReader = navigationReader;
+        this._toastReader = toastReader;
         this._pageFactory = pageFactory;
         this._navigationContext = navigationContext;
+        this._toastContext = toastContext;
     }
 
     public async Task RunAsync()
@@ -55,6 +67,8 @@ public sealed class RenderingHost : IDisposable
 
         Go(wg, () => this.RunRenderingLoopAsync(cts));
         Go(wg, () => this.ProcessNavigationCommandsAsync(cts));
+        Go(wg, () => this.ProcessToastCommandsAsync(cts));
+        Go(wg, () => this.HandleToastAsync(cts));
 
         await wg.WaitAsync();
     }
@@ -117,6 +131,8 @@ public sealed class RenderingHost : IDisposable
                              {
                                  // Log initialization error but allow rendering to continue
                                  System.Diagnostics.Debug.WriteLine($"Page initialization failed: {ex.Message}");
+
+                                 await this._toastContext.ShowErrorAsync(ex.Message);
                              }
 
                              await this.UpdateLayoutAsync(page);
@@ -142,9 +158,7 @@ public sealed class RenderingHost : IDisposable
                                          // Log input handling errors but don't crash the application
                                          System.Diagnostics.Debug.WriteLine($"Input handling failed: {ex.Message}");
 
-                                         // Update error state for display
-                                         this._lastErrorMessage = $"Input: {ex.Message}";
-                                         this._lastErrorTime = DateTime.Now;
+                                         await this._toastContext.ShowErrorAsync(ex.Message);
                                      }
                                  }
 
@@ -179,7 +193,6 @@ public sealed class RenderingHost : IDisposable
         Layout["Header"].Update(header);
         Layout["Content"].Update(body);
         Layout["FooterMain"].Update(footer);
-        Layout["FooterError"].Update(this.CreateErrorDisplay());
     }
 
     private async Task<IRenderable> SafeRenderFragmentAsync(
@@ -195,49 +208,62 @@ public sealed class RenderingHost : IDisposable
         {
             System.Diagnostics.Debug.WriteLine($"Fragment rendering failed ({fragmentName}): {ex.Message}");
 
-            // Update error state for display
-            this._lastErrorMessage = $"{fragmentName}: {ex.Message}";
-            this._lastErrorTime = DateTime.Now;
+            await this._toastContext.ShowErrorAsync(ex.Message);
 
             return fallbackRenderer();
         }
     }
 
-    private Task HandleRenderingErrorAsync(IPage currentPage, Exception ex)
+    private async Task HandleRenderingErrorAsync(IPage currentPage, Exception ex)
     {
         // Log the error
         System.Diagnostics.Debug.WriteLine($"Rendering error for page {currentPage.GetType().Name}: {ex.Message}");
 
-        // Update error state for footer display instead of blocking modal
-        this._lastErrorMessage = $"Page: {ex.Message}";
-        this._lastErrorTime = DateTime.Now;
-
-        return Task.CompletedTask;
+        await this._toastContext.ShowErrorAsync(ex.Message);
     }
 
-    private IRenderable CreateErrorDisplay()
+    private async Task HandleToastAsync(CancellationTokenSource cts)
     {
-        if (this._lastErrorMessage == null || this._lastErrorTime == null)
+        // Check for toast messages
+        while (!cts.IsCancellationRequested)
         {
-            return EmptyErrorDisplay;
+            if (this._lastToast.HasValue)
+            {
+                var toastMessage = this._lastToast.Value.Message;
+                var toastTime = this._lastToast.Value.Time;
+                var toastType = this._lastToast.Value.Type;
+                var toastDuration = this._lastToast.Value.Duration;
+
+                var timeSinceToast = DateTime.Now - toastTime;
+
+                if (timeSinceToast <= toastDuration)
+                {
+                    var toastText = toastMessage.Length > 55
+                        ? toastMessage[..52] + "..."
+                        : toastMessage;
+
+                    var (icon, color) = toastType switch
+                    {
+                        ToastType.Success => ("✓", "green"),
+                        ToastType.Warning => ("⚠", "yellow"),
+                        ToastType.Error => ("✗", "red"),
+                        ToastType.Info or _ => ("ℹ", "blue"),
+                    };
+
+                    Layout["FooterError"].Update(new Markup($"[{color}]{icon} {toastText}[/][dim][/]"));
+
+                    await Task.Delay(toastDuration);
+
+                    await this._toastContext.ClearAsync();
+                }
+
+                await Task.Delay(100);
+            }
+            else
+            {
+                Layout["FooterError"].Update(EmptyErrorDisplay);
+            }
         }
-
-        // Auto-clear errors after 5 seconds
-        var timeSinceError = DateTime.Now - this._lastErrorTime.Value;
-
-        if (timeSinceError.TotalSeconds > 5)
-        {
-            this._lastErrorMessage = null;
-            this._lastErrorTime = null;
-
-            return EmptyErrorDisplay;
-        }
-
-        var errorText = this._lastErrorMessage.Length > 55
-            ? this._lastErrorMessage[..52] + "..."
-            : this._lastErrorMessage;
-
-        return new Markup($"[red]⚠ {errorText}[/]\n[dim][/]");
     }
 
     private async Task<bool> HandleGlobalInputAsync(ConsoleKeyInfo keyInfo)
@@ -271,7 +297,7 @@ public sealed class RenderingHost : IDisposable
                     break;
 
                 case NavigateBackCommand:
-                    this.HandleNavigateBackCommand();
+                    await this.HandleNavigateBackCommand();
                     break;
 
                 case ExitCommand:
@@ -286,6 +312,39 @@ public sealed class RenderingHost : IDisposable
         await cts.CancelAsync();
     }
 
+    private async Task ProcessToastCommandsAsync(CancellationTokenSource cts)
+    {
+        var cancellationToken = cts.Token;
+
+        await foreach (var command in this._toastReader.ReadAllAsync(cancellationToken))
+        {
+            switch (command)
+            {
+                case ShowToastCommand showCommand:
+                    this._lastToast =
+                        new ToastInfo(
+                            showCommand.Message,
+                            DateTime.Now,
+                            showCommand.Type,
+                            showCommand.Duration);
+                    break;
+
+                case ClearToastCommand:
+                    this._lastToast = null;
+                    break;
+
+                default:
+                    System.Diagnostics.Debug.WriteLine($"Unknown toast command: {command.GetType().Name}");
+
+                    await this._toastContext.ShowErrorAsync($"Unknown toast command: {command.GetType().Name}");
+
+                    break;
+            }
+        }
+
+        await cts.CancelAsync();
+    }
+
     private async Task HandleNavigateToCommand(NavigateToCommand command)
     {
         var page = this._pageFactory.CreatePage(command.PageType, command.Args);
@@ -293,9 +352,7 @@ public sealed class RenderingHost : IDisposable
         // Cancel current page display to allow navigation
         await (this._currentPageCancellation?.CancelAsync() ?? Task.CompletedTask);
 
-        // Clear any error state when navigating
-        this._lastErrorMessage = null;
-        this._lastErrorTime = null;
+        await this._toastContext.ClearAsync();
 
         this._pageStack.Push(page);
 
@@ -303,14 +360,12 @@ public sealed class RenderingHost : IDisposable
         await Task.Yield();
     }
 
-    private void HandleNavigateBackCommand()
+    private async Task HandleNavigateBackCommand()
     {
         // Cancel current page display to allow navigation
         this._currentPageCancellation?.Cancel();
 
-        // Clear any error state when navigating back
-        this._lastErrorMessage = null;
-        this._lastErrorTime = null;
+        await this._toastContext.ClearAsync();
 
         if (this._pageStack.Count > 0)
         {

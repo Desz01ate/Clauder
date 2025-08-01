@@ -29,6 +29,18 @@ public static class ServiceConfiguration
             sp.GetRequiredService<Channel<NavigationCommand>>().Reader);
 
         services.AddSingleton<INavigationContext, NavigationContext>();
+
+        // Configure channel for toast notifications
+        services.AddSingleton<Channel<ToastCommand>>(
+            static _ => Channel.CreateBounded<ToastCommand>(10));
+
+        services.AddSingleton<ChannelWriter<ToastCommand>>(sp =>
+            sp.GetRequiredService<Channel<ToastCommand>>().Writer);
+
+        services.AddSingleton<ChannelReader<ToastCommand>>(sp =>
+            sp.GetRequiredService<Channel<ToastCommand>>().Reader);
+
+        services.AddSingleton<IToastContext, ToastContext>();
         services.AddSingleton<RenderingHost>();
 
         // Register pages
