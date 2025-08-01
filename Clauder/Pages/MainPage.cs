@@ -17,7 +17,7 @@ public sealed class MainPage : IDisplay
 
     public string Title => this._navigationService.CurrentTitle;
 
-    public async Task DisplayAsync()
+    public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
         if (!ClaudeDataService.ClaudeDirectoryExists())
         {

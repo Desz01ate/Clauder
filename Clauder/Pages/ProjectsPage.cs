@@ -48,12 +48,14 @@ public sealed class ProjectsPage : IDisplay
 
     public string Title => "[#CC785C]Claude Projects[/]";
 
-    public async Task DisplayAsync()
+    public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
         await this._dataService.LoadProjectsAsync();
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            
             AnsiConsole.WriteLine();
 
             var rule = new Rule("[#CC785C]Claude Projects & Sessions[/]")
@@ -107,6 +109,7 @@ public sealed class ProjectsPage : IDisplay
 
             while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 AnsiConsole.Clear();
                 AnsiConsole.WriteLine();
 

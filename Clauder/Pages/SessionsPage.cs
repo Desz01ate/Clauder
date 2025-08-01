@@ -10,7 +10,7 @@ public sealed class SessionsPage : IDisplay
 {
     private readonly ClaudeProjectInfo _project;
     private readonly INavigationService _navigationService;
-    
+
     private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
@@ -23,7 +23,7 @@ public sealed class SessionsPage : IDisplay
 
     public string Title => $"[#CC785C]Sessions - {this._project.ProjectName}[/]";
 
-    public async Task DisplayAsync()
+    public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
         var rule = new Rule($"[bold blue]Sessions for {this._project.ProjectName}[/]")
         {
@@ -38,7 +38,7 @@ public sealed class SessionsPage : IDisplay
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[dim][cyan]N[/] New Session • [red]B[/] Back[/]");
             var key = Console.ReadKey(true).Key;
-            
+
             switch (key)
             {
                 case ConsoleKey.N:
@@ -48,6 +48,7 @@ public sealed class SessionsPage : IDisplay
                     await this.PushBackAsync();
                     return;
             }
+
             return;
         }
 
@@ -61,6 +62,8 @@ public sealed class SessionsPage : IDisplay
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             AnsiConsole.Clear();
             AnsiConsole.WriteLine();
 
@@ -70,7 +73,7 @@ public sealed class SessionsPage : IDisplay
             {
                 var result = ShowSessionNavigation(this._currentPage, totalPages);
                 var singlePageResult = this.HandleSessionNavigationResult(result, sortedSessions, this._currentPage, this._selectedIndex);
-                
+
                 if (singlePageResult.session != null)
                 {
                     await LaunchExistingSessionAsync(singlePageResult.session);

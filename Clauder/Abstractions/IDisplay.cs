@@ -4,7 +4,5 @@ public interface IDisplay : IDisposable
 {
     string Title { get; }
 
-    Task DisplayAsync();
-    
-    Task PushBackAsync();
+    Task DisplayAsync(CancellationToken cancellationToken = default);
 }

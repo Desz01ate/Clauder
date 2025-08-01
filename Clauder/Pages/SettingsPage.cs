@@ -14,7 +14,7 @@ public sealed class SettingsPage : IDisplay
 
     public string Title => "[#CC785C]Settings[/]";
 
-    public async Task DisplayAsync()
+    public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
         AnsiConsole.Clear();
         AnsiConsole.WriteLine();
