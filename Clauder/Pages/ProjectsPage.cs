@@ -65,6 +65,8 @@ public sealed class ProjectsPage : IDisplay
 
             AnsiConsole.Write(rule);
 
+            AnsiConsole.WriteLine();
+
             if (this._projects.Count == 0)
             {
                 var currentFilter = this._searchFilterSubject.Value;
@@ -216,7 +218,7 @@ public sealed class ProjectsPage : IDisplay
 
             var isSelected = i == selectedIndex;
             var selectionMarker = isSelected ? "[yellow]>[/]" : " ";
-            var projectName = isSelected ? $"[yellow]{project.ProjectName}[/]" : $"[bold green]{project.ProjectName}[/]";
+            var projectName = isSelected ? $"[yellow]{project.ProjectName}[/]" : $"[dim]{project.ProjectName}[/]";
 
             table.AddRow(
                 selectionMarker,

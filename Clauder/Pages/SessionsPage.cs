@@ -25,12 +25,16 @@ public sealed class SessionsPage : IDisplay
 
     public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
-        var rule = new Rule($"[bold blue]Sessions for {this._project.ProjectName}[/]")
+        AnsiConsole.WriteLine();
+        
+        var rule = new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/]")
         {
             Justification = Justify.Left,
         };
 
         AnsiConsole.Write(rule);
+
+        AnsiConsole.WriteLine();
 
         if (this._project.Sessions.Count == 0)
         {
@@ -117,7 +121,7 @@ public sealed class SessionsPage : IDisplay
 
     private static void DisplaySessionPageWithSelection(ClaudeProjectInfo project, List<ClaudeSessionMetadata> sessions, int currentPage, int totalPages, int selectedIndex)
     {
-        var pageRule = new Rule($"[bold blue]Sessions for {project.ProjectName}[/] [dim]({currentPage + 1}/{totalPages})[/]")
+        var pageRule = new Rule($"[#CC785C]Sessions for {project.ProjectName}[/] [dim]({currentPage + 1}/{totalPages})[/]")
         {
             Justification = Justify.Left,
         };
