@@ -7,16 +7,20 @@ using Models;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
-public sealed record SettingsMenuItem(string Title, Action Action);
+public sealed record SettingsMenuItem(string Title, Func<Task> Action);
 
 public sealed class SettingsPage : IPage, IInputHandler
 {
     private readonly IReadOnlyList<SettingsMenuItem> _menuItems;
+    private readonly IToastContext _toastContext;
     private readonly IConfigurationService _configurationService;
     private int _selectedIndex;
 
-    public SettingsPage(IConfigurationService configurationService)
+    public SettingsPage(
+        IToastContext toastContext,
+        IConfigurationService configurationService)
     {
+        this._toastContext = toastContext;
         this._configurationService = configurationService;
         this._menuItems = new List<SettingsMenuItem>
         {
@@ -104,14 +108,14 @@ public sealed class SettingsPage : IPage, IInputHandler
         }.Expand();
     }
 
-    private void OpenClaudeDirectory()
+    private async Task OpenClaudeDirectory()
     {
-        var configuration = this._configurationService.GetConfiguration();
+        var configuration = await this._configurationService.GetConfigurationAsync();
         var claudeDirectory = configuration.ClaudeRootDirectory;
 
         if (!Directory.Exists(claudeDirectory))
         {
-            return;
+            await this._toastContext.ShowErrorAsync("Claude directory does not exist. Please check your configuration.");
         }
 
         try
@@ -151,18 +155,18 @@ public sealed class SettingsPage : IPage, IInputHandler
 
             Process.Start(processStartInfo);
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently handle any errors opening the directory
+            await this._toastContext.ShowErrorAsync($"Failed to open Claude directory: {ex.Message}");
         }
     }
 
-    private void ConfigureConfigurationField(
+    private async Task ConfigureConfigurationField(
         string fieldDisplayName,
         Func<ClaudeConfiguration, string> getter,
         Action<ClaudeConfiguration, string> setter)
     {
-        var configuration = this._configurationService.GetConfiguration();
+        var configuration = await this._configurationService.GetConfigurationAsync();
 
         Console.WriteLine();
         Console.Write($"Current {fieldDisplayName}: {getter(configuration)}");
@@ -186,14 +190,12 @@ public sealed class SettingsPage : IPage, IInputHandler
 
             setter(configuration, processedValue);
             this._configurationService.SaveConfiguration(configuration);
-            Console.WriteLine($"{fieldDisplayName} updated successfully!");
-            Console.WriteLine("Note: You may need to restart the application for changes to take full effect.");
-            Console.WriteLine("Press any key to continue...");
-            Console.ReadKey(true);
+
+            await this._toastContext.ShowSuccessAsync($"{fieldDisplayName} updated successfully! restart the application for changes to take full effect.");
         }
         else
         {
-            Console.WriteLine("No changes made.");
+            await this._toastContext.ShowInfoAsync("No changes made.");
         }
     }
 

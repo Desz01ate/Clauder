@@ -233,7 +233,7 @@ public sealed class SessionsPage : IPage, IInputHandler
 
                 if (selectedSession.Type is not "user")
                 {
-                    await this._toastContext.ShowWarningAsync("Unable to resume a non-user session.");
+                    await this._toastContext.ShowInfoAsync("Unable to resume a non-user session.");
                     break;
                 }
 
@@ -267,7 +267,6 @@ public sealed class SessionsPage : IPage, IInputHandler
             }
         }
     }
-
 
     public void Dispose()
     {

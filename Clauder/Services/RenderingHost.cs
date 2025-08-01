@@ -23,7 +23,7 @@ public sealed class RenderingHost : IDisposable
 
     #region Toast handling
 
-    private ToastInfo? _lastToast;
+    private ToastInfo? _toast;
 
     #endregion
 
@@ -35,10 +35,10 @@ public sealed class RenderingHost : IDisposable
                 new Layout("Header").Size(3),
                 new Layout("Content"),
                 new Layout("Footer")
-                    .Size(3)
+                    .Size(4)
                     .SplitColumns(
-                        new Layout("FooterMain").Ratio(80),
-                        new Layout("FooterError").Ratio(20)
+                        new Layout("FooterMain").Ratio(70),
+                        new Layout("FooterError").Ratio(30)
                     )
             );
 
@@ -227,12 +227,12 @@ public sealed class RenderingHost : IDisposable
         // Check for toast messages
         while (!cts.IsCancellationRequested)
         {
-            if (this._lastToast.HasValue)
+            if (this._toast.HasValue)
             {
-                var toastMessage = this._lastToast.Value.Message;
-                var toastTime = this._lastToast.Value.Time;
-                var toastType = this._lastToast.Value.Type;
-                var toastDuration = this._lastToast.Value.Duration;
+                var toastMessage = this._toast.Value.Message;
+                var toastTime = this._toast.Value.Time;
+                var toastType = this._toast.Value.Type;
+                var toastDuration = this._toast.Value.Duration;
 
                 var timeSinceToast = DateTime.Now - toastTime;
 
@@ -250,7 +250,18 @@ public sealed class RenderingHost : IDisposable
                         ToastType.Info or _ => ("ℹ", "blue"),
                     };
 
-                    Layout["FooterError"].Update(new Markup($"[{color}]{icon} {toastText}[/][dim][/]"));
+                    var panel = new Panel($"[{color}]{icon} {toastText}[/]")
+                        .RoundedBorder()
+                        .BorderColor(Color.FromInt32(toastType switch
+                        {
+                            ToastType.Success => 28, // Green
+                            ToastType.Warning => 178, // Yellow/Orange
+                            ToastType.Error => 196, // Red
+                            ToastType.Info or _ => 33, // Blue
+                        }))
+                        .Padding(0, 0);
+                    
+                    Layout["FooterError"].Update(panel);
 
                     await Task.Delay(toastDuration);
 
@@ -321,7 +332,7 @@ public sealed class RenderingHost : IDisposable
             switch (command)
             {
                 case ShowToastCommand showCommand:
-                    this._lastToast =
+                    this._toast =
                         new ToastInfo(
                             showCommand.Message,
                             DateTime.Now,
@@ -330,7 +341,7 @@ public sealed class RenderingHost : IDisposable
                     break;
 
                 case ClearToastCommand:
-                    this._lastToast = null;
+                    this._toast = null;
                     break;
 
                 default:
