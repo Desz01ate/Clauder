@@ -15,10 +15,19 @@ public sealed class ProjectsPage : IPage, IInputHandler
     private readonly INavigationContext _navigationContext;
 
     private IReadOnlyList<ClaudeProjectSummary> _projects;
-    private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
     private readonly BehaviorSubject<string> _searchFilterSubject;
+
+    private static int PageSize
+    {
+        get
+        {
+            var consoleHeight = Console.WindowHeight;
+
+            return (int)(consoleHeight * 0.7);
+        }
+    }
 
     public ProjectsPage(ClaudeDataService dataService, INavigationContext navigationContext)
     {
