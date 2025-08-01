@@ -26,11 +26,12 @@ public sealed class RenderingHost : IDisposable
             .SplitRows(
                 new Layout("Header").Size(3),
                 new Layout("Content"),
-                new Layout("Footer").Size(3)
-                                    .SplitColumns(
-                                        new Layout("FooterMain"),
-                                        new Layout("FooterError").Size(60)
-                                    )
+                new Layout("Footer")
+                    .Size(3)
+                    .SplitColumns(
+                        new Layout("FooterMain").Ratio(80),
+                        new Layout("FooterError").Ratio(20)
+                    )
             );
 
     public RenderingHost(
@@ -246,6 +247,10 @@ public sealed class RenderingHost : IDisposable
             case ConsoleKey.Escape:
             case ConsoleKey.B:
                 await this._navigationContext.NavigateBackAsync();
+                return true;
+
+            case ConsoleKey.O:
+                await this._navigationContext.NavigateToAsync<SettingsPage>();
                 return true;
 
             default:
