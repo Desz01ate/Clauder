@@ -14,13 +14,14 @@ public class ClaudeDataService : IDisposable
     private readonly static string ClaudeDirectory = Path.Combine(HomeDirectory, ".claude");
     private readonly static string ProjectDir = Path.Combine(ClaudeDirectory, "projects");
 
-    private List<ClaudeProjectInfo> projects = [];
+    private List<ClaudeProjectSummary> projectSummaries = [];
+    private readonly Dictionary<string, ClaudeProjectInfo> _projectCache = new();
     private readonly FileSystemWatcher? _fileWatcher;
     private readonly Subject<FileSystemEventArgs> _fileChangedSubject;
 
-    public IReadOnlyList<ClaudeProjectInfo> Projects => this.projects;
+    public IReadOnlyList<ClaudeProjectSummary> ProjectSummaries => this.projectSummaries;
 
-    public IObservable<IReadOnlyList<ClaudeProjectInfo>> ProjectsObservable { get; }
+    public IObservable<IReadOnlyList<ClaudeProjectSummary>> ProjectSummariesObservable { get; }
 
     public ClaudeDataService()
     {
@@ -43,37 +44,93 @@ public class ClaudeDataService : IDisposable
             this._fileWatcher.Renamed += this.OnFileChanged;
         }
 
-        // Create observable that debounces file changes and reloads projects
+        // Create observable that debounces file changes and reloads project summaries
         var fileChangeObservable = this._fileChangedSubject
                                        .Throttle(TimeSpan.FromMilliseconds(500)) // Debounce rapid file changes
-                                       .SelectMany(_ => this.LoadProjectsAsync());
+                                       .SelectMany(_ => this.LoadProjectSummariesAsync());
 
-        var initialLoadObservable = Observable.FromAsync(this.LoadProjectsAsync);
+        var initialLoadObservable = Observable.FromAsync(this.LoadProjectSummariesAsync);
 
-        this.ProjectsObservable = initialLoadObservable.Merge(fileChangeObservable);
+        this.ProjectSummariesObservable = initialLoadObservable.Merge(fileChangeObservable);
     }
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
+        _projectCache.Clear();
         this._fileChangedSubject.OnNext(e);
     }
 
+    [Obsolete("Use LoadProjectSummariesAsync and LoadProjectSessionsAsync for better performance")]
     public async Task<IReadOnlyList<ClaudeProjectInfo>> LoadProjectsAsync()
+    {
+        var summaries = await LoadProjectSummariesAsync();
+        var projects = new List<ClaudeProjectInfo>();
+        
+        foreach (var summary in summaries)
+        {
+            try
+            {
+                var project = await LoadProjectSessionsAsync(summary.ProjectPath);
+                projects.Add(project);
+            }
+            catch
+            {
+            }
+        }
+        
+        return projects;
+    }
+
+    public IReadOnlyList<ClaudeProjectInfo> Projects => 
+        projectSummaries.Select(s => _projectCache.TryGetValue(s.ProjectPath, out var cached) 
+            ? cached 
+            : new ClaudeProjectInfo(new List<ClaudeSessionMetadata>()) 
+            { 
+                ProjectName = s.ProjectName, 
+                ProjectPath = s.ProjectPath 
+            }).ToList();
+
+    public Task<IReadOnlyList<ClaudeProjectSummary>> LoadProjectSummariesAsync()
     {
         if (!Directory.Exists(ProjectDir))
         {
-            return new List<ClaudeProjectInfo>();
+            return Task.FromResult<IReadOnlyList<ClaudeProjectSummary>>(new List<ClaudeProjectSummary>());
         }
 
-        var claudeProjects = Directory.GetDirectories(ProjectDir);
+        var claudeProjectDirectories = Directory.GetDirectories(ProjectDir);
+        
+        this.projectSummaries = claudeProjectDirectories
+            .Select(ClaudeProjectSummary.FromDirectory)
+            .OrderBy(p => p.ProjectName)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<ClaudeProjectSummary>>(this.projectSummaries);
+    }
+
+    public async Task<ClaudeProjectInfo> LoadProjectSessionsAsync(string projectPath)
+    {
+        if (_projectCache.TryGetValue(projectPath, out var cachedProject))
+        {
+            return cachedProject;
+        }
+
+        var projectDirectoryName = projectPath.Replace(Path.DirectorySeparatorChar, '-');
+        var projectDirectory = Path.Combine(ProjectDir, projectDirectoryName);
+        
+        if (!Directory.Exists(projectDirectory))
+        {
+            throw new DirectoryNotFoundException($"Project directory not found: {projectDirectory}");
+        }
+
+        var sessionFiles = Directory.GetFiles(projectDirectory, "*.jsonl");
         var wg = new WaitGroup();
         var ch = new DefaultChannel<ClaudeSessionMetadata>();
 
-        foreach (var session in claudeProjects.SelectMany(Directory.EnumerateFiles))
+        foreach (var sessionFile in sessionFiles)
         {
             Go(wg, async () =>
             {
-                var lines = File.ReadLines(session);
+                var lines = File.ReadLines(sessionFile);
                 var firstLine = lines.FirstOrDefault();
 
                 if (firstLine is null)
@@ -81,11 +138,7 @@ public class ClaudeDataService : IDisposable
                     return;
                 }
 
-                // Last line query requires O(n), which drastically increases the startup time.
-                // var lastLine = lines.Last();
-
                 var metadata = JsonSerializer.Deserialize<ClaudeSessionMetadata>(firstLine);
-                // var lastLineMetadata = JsonSerializer.Deserialize<ClaudeSessionMetadata>(lastLine);
 
                 if (metadata is null)
                 {
@@ -103,14 +156,15 @@ public class ClaudeDataService : IDisposable
         });
 
         var sessions = await ch.Where(s => s.Cwd is not null)
-                               .OrderBy(s => s.Cwd)
+                               .OrderBy(s => s.Timestamp)
                                .ToListAsync();
 
-        this.projects = sessions.GroupBy(s => s.Cwd)
-                                .Select(ClaudeProjectInfo.From!)
-                                .ToList();
-
-        return this.projects;
+        var groupedSessions = sessions.GroupBy(s => s.Cwd!).First();
+        var projectInfo = ClaudeProjectInfo.From(groupedSessions);
+        
+        _projectCache[projectPath] = projectInfo;
+        
+        return projectInfo;
     }
 
     public static bool ClaudeDirectoryExists()

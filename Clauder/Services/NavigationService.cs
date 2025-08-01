@@ -1,6 +1,7 @@
 namespace Clauder.Services;
 
 using Clauder.Abstractions;
+using Spectre.Console;
 
 public sealed class NavigationService : INavigationService, IDisposable
 {
@@ -63,8 +64,10 @@ public sealed class NavigationService : INavigationService, IDisposable
                 // Navigation occurred, continue the loop
                 continue;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                AnsiConsole.WriteException(ex);
+
                 break;
             }
         }

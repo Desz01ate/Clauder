@@ -4,9 +4,9 @@ public class ClaudeProjectInfo
 {
     private readonly List<ClaudeSessionMetadata> _sessions;
 
-    private ClaudeProjectInfo(IEnumerable<ClaudeSessionMetadata> session)
+    public ClaudeProjectInfo(IEnumerable<ClaudeSessionMetadata> sessions)
     {
-        this._sessions = session.ToList();
+        this._sessions = sessions.ToList();
     }
 
     public string ProjectName { get; init; }

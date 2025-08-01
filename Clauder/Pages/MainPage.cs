@@ -19,12 +19,6 @@ public sealed class MainPage : IDisplay
 
     public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
-        if (!ClaudeDataService.ClaudeDirectoryExists())
-        {
-            AnsiConsole.MarkupLine($"[red]Claude projects directory not found at: {ClaudeDataService.GetClaudeProjectsPath()}[/]");
-            return;
-        }
-
         // Start with the projects page
         var projectsPage = new ProjectsPage(this._dataService, this._navigationService);
         await this._navigationService.NavigateToAsync(projectsPage);

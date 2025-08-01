@@ -13,7 +13,7 @@ public sealed class ProjectsPage : IDisplay
     private readonly ClaudeDataService _dataService;
     private readonly INavigationService _navigationService;
 
-    private IReadOnlyList<ClaudeProjectInfo> _projects;
+    private IReadOnlyList<ClaudeProjectSummary> _projects;
     private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
@@ -24,11 +24,11 @@ public sealed class ProjectsPage : IDisplay
         this._dataService = dataService;
         this._navigationService = navigationService;
 
-        this._projects = new List<ClaudeProjectInfo>();
+        this._projects = new List<ClaudeProjectSummary>();
         this._searchFilterSubject = new BehaviorSubject<string>(string.Empty);
 
         // Combine data service changes with search filter changes
-        var filteredProjects = dataService.ProjectsObservable
+        var filteredProjects = dataService.ProjectSummariesObservable
                                           .CombineLatest(this._searchFilterSubject, (projectData, filter) =>
                                               string.IsNullOrWhiteSpace(filter)
                                                   ? projectData.OrderBy(p => p.ProjectName).ToList()
@@ -43,19 +43,19 @@ public sealed class ProjectsPage : IDisplay
         });
 
         // Initialize with current projects
-        this._projects = dataService.Projects;
+        this._projects = dataService.ProjectSummaries;
     }
 
     public string Title => "[#CC785C]Claude Projects[/]";
 
     public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
-        await this._dataService.LoadProjectsAsync();
+        await this._dataService.LoadProjectSummariesAsync();
 
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            
+
             AnsiConsole.WriteLine();
 
             var rule = new Rule("[#CC785C]Claude Projects & Sessions[/]")
@@ -124,7 +124,8 @@ public sealed class ProjectsPage : IDisplay
                     {
                         if (singlePageResult != null)
                         {
-                            var sessionsPage = new SessionsPage(singlePageResult, this._navigationService);
+                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(singlePageResult.ProjectPath);
+                            var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
 
                             await this._navigationService.NavigateToAsync(sessionsPage);
                         }
@@ -149,7 +150,8 @@ public sealed class ProjectsPage : IDisplay
                     {
                         if (handleResult != null)
                         {
-                            var sessionsPage = new SessionsPage(handleResult, this._navigationService);
+                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(handleResult.ProjectPath);
+                            var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
 
                             await this._navigationService.NavigateToAsync(sessionsPage);
                         }
@@ -175,7 +177,7 @@ public sealed class ProjectsPage : IDisplay
     }
 
     private static void DisplayPageWithSelection(
-        IReadOnlyList<ClaudeProjectInfo> projects,
+        IReadOnlyList<ClaudeProjectSummary> projects,
         int currentPage,
         int totalPages,
         int selectedIndex,
@@ -204,8 +206,7 @@ public sealed class ProjectsPage : IDisplay
         for (var i = 0; i < pageProjects.Count; i++)
         {
             var project = pageProjects[i];
-            var latestSession = project.Sessions.OrderByDescending(s => s.Timestamp).First();
-            var sessionCount = project.Sessions.Count;
+            var sessionCount = project.SessionCount;
 
             var sessionCountText = sessionCount == 1
                 ? "[dim]1 session[/]"
@@ -222,13 +223,13 @@ public sealed class ProjectsPage : IDisplay
                 projectName,
                 $"[dim]{relativePath}[/]",
                 sessionCountText,
-                $"[dim]{latestSession.GitBranch ?? "N/A"}[/]"
+                $"[dim]{project.LastGitBranch ?? "N/A"}[/]"
             );
         }
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[dim]Total: {projects.Count} projects, {projects.Sum(p => p.Sessions.Count)} sessions[/]");
+        AnsiConsole.MarkupLine($"[dim]Total: {projects.Count} projects, {projects.Sum(p => p.SessionCount)} sessions[/]");
     }
 
     private NavigationAction ShowProjectNavigation(int currentPage, int totalPages)
@@ -268,9 +269,9 @@ public sealed class ProjectsPage : IDisplay
         };
     }
 
-    private Task<ClaudeProjectInfo?> HandleProjectNavigationResult(
+    private Task<ClaudeProjectSummary?> HandleProjectNavigationResult(
         NavigationAction action,
-        IReadOnlyList<ClaudeProjectInfo> sortedProjects,
+        IReadOnlyList<ClaudeProjectSummary> sortedProjects,
         int currentPage,
         int selectedIndex)
     {
@@ -286,7 +287,7 @@ public sealed class ProjectsPage : IDisplay
                 break;
             case NavigationAction.SelectItem:
                 var actualIndex = currentPage * PageSize + selectedIndex;
-                return Task.FromResult<ClaudeProjectInfo?>(sortedProjects[actualIndex]);
+                return Task.FromResult<ClaudeProjectSummary?>(sortedProjects[actualIndex]);
             case NavigationAction.NextPage:
                 this._currentPage++;
                 this._selectedIndex = Math.Clamp(this._selectedIndex, 0, itemsOnPage - 1);
@@ -307,7 +308,7 @@ public sealed class ProjectsPage : IDisplay
                 break;
         }
 
-        return Task.FromResult<ClaudeProjectInfo?>(null);
+        return Task.FromResult<ClaudeProjectSummary?>(null);
     }
 
     private void PromptForSearch()
