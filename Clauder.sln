@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Clauder", "Clauder\Clauder.csproj", "{07958B07-6197-4D75-B6AB-B624739A3CCE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Clauder.Tests", "Clauder.Tests\Clauder.Tests.csproj", "{C5DF2823-5FB0-46D8-892A-3CA492CD0E25}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{07958B07-6197-4D75-B6AB-B624739A3CCE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{07958B07-6197-4D75-B6AB-B624739A3CCE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{07958B07-6197-4D75-B6AB-B624739A3CCE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5DF2823-5FB0-46D8-892A-3CA492CD0E25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5DF2823-5FB0-46D8-892A-3CA492CD0E25}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5DF2823-5FB0-46D8-892A-3CA492CD0E25}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5DF2823-5FB0-46D8-892A-3CA492CD0E25}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

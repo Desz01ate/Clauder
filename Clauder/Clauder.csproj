@@ -9,9 +9,10 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>clauder</ToolCommandName>
         <PackageId>Clauder</PackageId>
-        <Version>1.0.0</Version>
+        <Version>1.1.0</Version>
         <Authors>Desz01ate</Authors>
         <Description>A project and session manager for Claude Code.</Description>
+        <PackageReleaseNotes>Added settings page, performance improvement.</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
 
@@ -20,6 +21,8 @@
         <PackageReference Include="Concur" Version="1.4.0-beta-002"/>
         <PackageReference Include="System.Reactive" Version="6.0.1"/>
         <PackageReference Include="System.Linq.Async" Version="6.0.3"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0"/>
     </ItemGroup>
 
     <ItemGroup>
