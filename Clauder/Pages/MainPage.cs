@@ -1,28 +1,46 @@
 namespace Clauder.Pages;
 
-using Abstractions;
+using Clauder.Abstractions;
+using Clauder.Services;
 using Spectre.Console;
 
 public sealed class MainPage : IDisplay
 {
-    private readonly Stack<IDisplay> displayStack = new();
+    private readonly ClaudeDataService _dataService;
+    private readonly NavigationService _navigationService;
 
     public MainPage()
     {
+        this._dataService = new ClaudeDataService();
+        this._navigationService = new NavigationService();
     }
 
-    public string Title => this.displayStack.TryPeek(out var currentDisplay) ? currentDisplay.Title : "[#CC785C]Clauder[/]";
+    public string Title => this._navigationService.CurrentTitle;
 
-    public Task DisplayAsync()
+    public async Task DisplayAsync()
     {
-        return Task.CompletedTask;
+        if (!ClaudeDataService.ClaudeDirectoryExists())
+        {
+            AnsiConsole.MarkupLine($"[red]Claude projects directory not found at: {ClaudeDataService.GetClaudeProjectsPath()}[/]");
+            return;
+        }
+
+        // Start with the projects page
+        var projectsPage = new ProjectsPage(this._dataService, this._navigationService);
+        await this._navigationService.NavigateToAsync(projectsPage);
+
+        // Run the navigation loop
+        await this._navigationService.RunAsync();
+    }
+
+    public Task PushBackAsync()
+    {
+        return this._navigationService.ExitAsync();
     }
 
     public void Dispose()
     {
-        foreach (var display in this.displayStack)
-        {
-            display.Dispose();
-        }
+        this._navigationService.Dispose();
+        this._dataService.Dispose();
     }
 }

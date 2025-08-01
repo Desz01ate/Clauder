@@ -1,39 +1,57 @@
+namespace Clauder.Pages;
+
+using System.Diagnostics;
+using Clauder.Abstractions;
+using Clauder.Enums;
 using Clauder.Models;
 using Spectre.Console;
 
-namespace Clauder.UI;
-
-using Enums;
-
-public class SessionDisplayService
+public sealed class SessionsPage : IDisplay
 {
+    private readonly ClaudeProjectInfo _project;
+    private readonly INavigationService _navigationService;
+    
     private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
 
-    public (ClaudeSessionMetadata? session, bool isNewSession) DisplaySessionsPaginated(ClaudeProjectInfo project)
+    public SessionsPage(ClaudeProjectInfo project, INavigationService navigationService)
     {
-        var rule = new Rule($"[bold blue]Sessions for {project.ProjectName}[/]")
+        this._project = project;
+        this._navigationService = navigationService;
+    }
+
+    public string Title => $"[#CC785C]Sessions - {this._project.ProjectName}[/]";
+
+    public async Task DisplayAsync()
+    {
+        var rule = new Rule($"[bold blue]Sessions for {this._project.ProjectName}[/]")
         {
             Justification = Justify.Left,
         };
 
         AnsiConsole.Write(rule);
 
-        if (project.Sessions.Count == 0)
+        if (this._project.Sessions.Count == 0)
         {
             AnsiConsole.MarkupLine("[yellow]No sessions found for this project.[/]");
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[dim][cyan]N[/] New Session • [red]B[/] Back[/]");
             var key = Console.ReadKey(true).Key;
-            return key switch
+            
+            switch (key)
             {
-                ConsoleKey.N => (null, true),
-                _ => (null, false)
-            };
+                case ConsoleKey.N:
+                    await LaunchNewSessionAsync(this._project);
+                    break;
+                default:
+                    await this.PushBackAsync();
+                    return;
+            }
+            return;
         }
 
-        var sortedSessions = project.Sessions.OrderByDescending(s => s.Timestamp).ToList();
+        var sortedSessions = this._project.Sessions.OrderByDescending(s => s.Timestamp).ToList();
         var totalPages = (int)Math.Ceiling((double)sortedSessions.Count / PageSize);
 
         // Ensure current page and selection are within bounds
@@ -44,27 +62,54 @@ public class SessionDisplayService
         while (true)
         {
             AnsiConsole.Clear();
-
             AnsiConsole.WriteLine();
 
-            DisplaySessionPageWithSelection(project, sortedSessions, this._currentPage, totalPages, this._selectedIndex);
+            DisplaySessionPageWithSelection(this._project, sortedSessions, this._currentPage, totalPages, this._selectedIndex);
 
             if (totalPages <= 1 && sortedSessions.Count <= PageSize)
             {
                 var result = ShowSessionNavigation(this._currentPage, totalPages);
                 var singlePageResult = this.HandleSessionNavigationResult(result, sortedSessions, this._currentPage, this._selectedIndex);
-                if (singlePageResult.session != null || result == NavigationAction.Back || result == NavigationAction.NewSession)
-                    return singlePageResult;
+                
+                if (singlePageResult.session != null)
+                {
+                    await LaunchExistingSessionAsync(singlePageResult.session);
+                }
+                else if (singlePageResult.isNewSession)
+                {
+                    await LaunchNewSessionAsync(this._project);
+                }
+                else if (result == NavigationAction.Back)
+                {
+                    await this.PushBackAsync();
+                    return;
+                }
             }
             else
             {
                 var navigationResult = ShowSessionNavigation(this._currentPage, totalPages);
                 var handleResult = this.HandleSessionNavigationResult(navigationResult, sortedSessions, this._currentPage, this._selectedIndex);
 
-                if (handleResult.session != null || navigationResult == NavigationAction.Back || navigationResult == NavigationAction.NewSession)
-                    return handleResult;
+                if (handleResult.session != null)
+                {
+                    await LaunchExistingSessionAsync(handleResult.session);
+                }
+                else if (handleResult.isNewSession)
+                {
+                    await LaunchNewSessionAsync(this._project);
+                }
+                else if (navigationResult == NavigationAction.Back)
+                {
+                    await this.PushBackAsync();
+                    return;
+                }
             }
         }
+    }
+
+    public async Task PushBackAsync()
+    {
+        await this._navigationService.NavigateBackAsync();
     }
 
     private static void DisplaySessionPageWithSelection(ClaudeProjectInfo project, List<ClaudeSessionMetadata> sessions, int currentPage, int totalPages, int selectedIndex)
@@ -182,5 +227,107 @@ public class SessionDisplayService
         }
 
         return (null, false);
+    }
+
+    private static async Task LaunchExistingSessionAsync(ClaudeSessionMetadata session)
+    {
+        if (string.IsNullOrEmpty(session.SessionId) || string.IsNullOrEmpty(session.Cwd))
+        {
+            AnsiConsole.MarkupLine("[red]Session ID or working directory is missing. Cannot launch session.[/]");
+            Console.WriteLine("Press any key to continue...");
+            Console.ReadKey(true);
+            return;
+        }
+
+        try
+        {
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = "claude",
+                Arguments = $"-r \"{session.SessionId}\"",
+                WorkingDirectory = session.Cwd,
+                UseShellExecute = false,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
+                RedirectStandardInput = false,
+                CreateNoWindow = false,
+            };
+
+            Console.Clear();
+            Console.WriteLine($"Launching Claude session: {session.SessionId}");
+            Console.WriteLine($"Working directory: {session.Cwd}");
+            Console.WriteLine($"Command: claude -r \"{session.SessionId}\"");
+            Console.WriteLine();
+            Console.WriteLine("Press Ctrl+C to terminate the session...");
+            Console.WriteLine(new string('=', 50));
+
+            using var process = Process.Start(processStartInfo);
+
+            if (process == null)
+            {
+                throw new Exception("Failed to start Claude process.");
+            }
+
+            await process.WaitForExitAsync();
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error launching Claude session: {ex.Message}[/]");
+            Console.WriteLine("Press any key to continue...");
+            Console.ReadKey(true);
+        }
+    }
+
+    private static async Task LaunchNewSessionAsync(ClaudeProjectInfo project)
+    {
+        if (string.IsNullOrEmpty(project.ProjectPath))
+        {
+            AnsiConsole.MarkupLine("[red]Project path is missing. Cannot launch new session.[/]");
+            Console.WriteLine("Press any key to continue...");
+            Console.ReadKey(true);
+            return;
+        }
+
+        try
+        {
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = "claude",
+                Arguments = string.Empty,
+                WorkingDirectory = project.ProjectPath,
+                UseShellExecute = false,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
+                RedirectStandardInput = false,
+                CreateNoWindow = false,
+            };
+
+            Console.Clear();
+            Console.WriteLine($"Starting new Claude session for project: {project.ProjectName}");
+            Console.WriteLine($"Working directory: {project.ProjectPath}");
+            Console.WriteLine("Command: claude");
+            Console.WriteLine();
+            Console.WriteLine("Press Ctrl+C to terminate the session...");
+            Console.WriteLine(new string('=', 50));
+
+            using var process = Process.Start(processStartInfo);
+
+            if (process == null)
+            {
+                throw new Exception("Failed to start Claude process.");
+            }
+
+            await process.WaitForExitAsync();
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error launching new Claude session: {ex.Message}[/]");
+            Console.WriteLine("Press any key to continue...");
+            Console.ReadKey(true);
+        }
+    }
+
+    public void Dispose()
+    {
     }
 }

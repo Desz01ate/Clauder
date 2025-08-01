@@ -1,26 +1,30 @@
+namespace Clauder.Pages;
+
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
+using Clauder.Abstractions;
+using Clauder.Enums;
 using Clauder.Models;
 using Clauder.Services;
 using Spectre.Console;
-using System.Reactive.Subjects;
-using System.Reactive.Linq;
 
-namespace Clauder.UI;
-
-using Enums;
-
-public class ProjectDisplayService : IDisposable
+public sealed class ProjectsPage : IDisplay
 {
-    private IReadOnlyList<ClaudeProjectInfo> projects;
-    private const int PageSize = 10;
+    private readonly ClaudeDataService _dataService;
+    private readonly INavigationService _navigationService;
 
+    private IReadOnlyList<ClaudeProjectInfo> _projects;
+    private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
-
     private readonly BehaviorSubject<string> _searchFilterSubject;
 
-    public ProjectDisplayService(ClaudeDataService dataService)
+    public ProjectsPage(ClaudeDataService dataService, INavigationService navigationService)
     {
-        this.projects = new List<ClaudeProjectInfo>();
+        this._dataService = dataService;
+        this._navigationService = navigationService;
+
+        this._projects = new List<ClaudeProjectInfo>();
         this._searchFilterSubject = new BehaviorSubject<string>(string.Empty);
 
         // Combine data service changes with search filter changes
@@ -34,16 +38,20 @@ public class ProjectDisplayService : IDisposable
         // Subscribe to changes to update current filtered projects
         filteredProjects.Subscribe(filtered =>
         {
-            this.projects = filtered;
+            this._projects = filtered;
             this.ResetPagination();
         });
 
-        // Initialize with current projects (will be updated by the observable)
-        this.projects = dataService.Projects;
+        // Initialize with current projects
+        this._projects = dataService.Projects;
     }
 
-    public ClaudeProjectInfo? DisplayProjectsPaginated()
+    public string Title => "[#CC785C]Claude Projects[/]";
+
+    public async Task DisplayAsync()
     {
+        await this._dataService.LoadProjectsAsync();
+
         while (true)
         {
             AnsiConsole.WriteLine();
@@ -55,19 +63,23 @@ public class ProjectDisplayService : IDisposable
 
             AnsiConsole.Write(rule);
 
-            if (this.projects.Count == 0)
+            if (this._projects.Count == 0)
             {
                 var currentFilter = this._searchFilterSubject.Value;
 
                 if (string.IsNullOrWhiteSpace(currentFilter))
                 {
                     AnsiConsole.MarkupLine("[yellow]No Claude projects found.[/]");
-                    return null;
+                    await this.PushBackAsync();
+
+                    return;
                 }
 
                 AnsiConsole.MarkupLine($"[yellow]No projects found matching '{currentFilter}'.[/]");
                 AnsiConsole.WriteLine();
+
                 ShowSearchNavigation();
+
                 var key = Console.ReadKey(true).Key;
 
                 switch (key)
@@ -79,35 +91,45 @@ public class ProjectDisplayService : IDisposable
                         this.ClearSearch();
                         break;
                     case ConsoleKey.Q:
-                        return null;
+                        await this.PushBackAsync();
+                        return;
                 }
 
                 continue;
             }
 
-            var totalPages = (int)Math.Ceiling((double)this.projects.Count / PageSize);
+            var totalPages = (int)Math.Ceiling((double)this._projects.Count / PageSize);
 
             // Ensure current page and selection are within bounds
             this._currentPage = Math.Min(this._currentPage, totalPages - 1);
-            var itemsOnCurrentPage = Math.Min(PageSize, this.projects.Count - this._currentPage * PageSize);
+            var itemsOnCurrentPage = Math.Min(PageSize, this._projects.Count - this._currentPage * PageSize);
             this._selectedIndex = Math.Min(this._selectedIndex, itemsOnCurrentPage - 1);
 
             while (true)
             {
                 AnsiConsole.Clear();
-                
                 AnsiConsole.WriteLine();
 
-                DisplayPageWithSelection(this.projects, this._currentPage, totalPages, this._selectedIndex, this._searchFilterSubject.Value);
+                DisplayPageWithSelection(this._projects, this._currentPage, totalPages, this._selectedIndex, this._searchFilterSubject.Value);
 
-                if (totalPages <= 1 && this.projects.Count <= PageSize)
+                if (totalPages <= 1 && this._projects.Count <= PageSize)
                 {
                     var result = this.ShowProjectNavigation(this._currentPage, totalPages);
-                    var singlePageResult = this.HandleProjectNavigationResult(result, this.projects, this._currentPage, this._selectedIndex);
+                    var singlePageResult = await this.HandleProjectNavigationResult(result, this._projects, this._currentPage, this._selectedIndex);
 
                     if (singlePageResult != null || result == NavigationAction.Quit)
                     {
-                        return singlePageResult;
+                        if (singlePageResult != null)
+                        {
+                            var sessionsPage = new SessionsPage(singlePageResult, this._navigationService);
+
+                            await this._navigationService.NavigateToAsync(sessionsPage);
+                        }
+                        else
+                        {
+                            await this.PushBackAsync();
+                            return;
+                        }
                     }
 
                     if (result is NavigationAction.Search or NavigationAction.Back)
@@ -118,11 +140,21 @@ public class ProjectDisplayService : IDisposable
                 else
                 {
                     var navigationResult = this.ShowProjectNavigation(this._currentPage, totalPages);
-                    var handleResult = this.HandleProjectNavigationResult(navigationResult, this.projects, this._currentPage, this._selectedIndex);
+                    var handleResult = await this.HandleProjectNavigationResult(navigationResult, this._projects, this._currentPage, this._selectedIndex);
 
                     if (handleResult != null || navigationResult == NavigationAction.Quit)
                     {
-                        return handleResult;
+                        if (handleResult != null)
+                        {
+                            var sessionsPage = new SessionsPage(handleResult, this._navigationService);
+
+                            await this._navigationService.NavigateToAsync(sessionsPage);
+                        }
+                        else
+                        {
+                            await this.PushBackAsync();
+                            return;
+                        }
                     }
 
                     if (navigationResult is NavigationAction.Search or NavigationAction.Back)
@@ -134,9 +166,9 @@ public class ProjectDisplayService : IDisposable
         }
     }
 
-    public static void DisplayErrorMessage(string message)
+    public async Task PushBackAsync()
     {
-        AnsiConsole.MarkupLine($"[red]{message}[/]");
+        await this._navigationService.NavigateBackAsync();
     }
 
     private static void DisplayPageWithSelection(
@@ -233,7 +265,7 @@ public class ProjectDisplayService : IDisposable
         };
     }
 
-    private ClaudeProjectInfo? HandleProjectNavigationResult(
+    private Task<ClaudeProjectInfo?> HandleProjectNavigationResult(
         NavigationAction action,
         IReadOnlyList<ClaudeProjectInfo> sortedProjects,
         int currentPage,
@@ -251,7 +283,7 @@ public class ProjectDisplayService : IDisposable
                 break;
             case NavigationAction.SelectItem:
                 var actualIndex = currentPage * PageSize + selectedIndex;
-                return sortedProjects[actualIndex];
+                return Task.FromResult<ClaudeProjectInfo?>(sortedProjects[actualIndex]);
             case NavigationAction.NextPage:
                 this._currentPage++;
                 this._selectedIndex = Math.Clamp(this._selectedIndex, 0, itemsOnPage - 1);
@@ -272,15 +304,13 @@ public class ProjectDisplayService : IDisposable
                 break;
         }
 
-        return null;
+        return Task.FromResult<ClaudeProjectInfo?>(null);
     }
 
     private void PromptForSearch()
     {
         AnsiConsole.WriteLine();
-
         var searchTerm = AnsiConsole.Ask<string>("[yellow]Enter search term (project name):[/]");
-
         this._searchFilterSubject.OnNext(searchTerm.Trim());
     }
 
@@ -305,6 +335,11 @@ public class ProjectDisplayService : IDisposable
         };
 
         AnsiConsole.MarkupLine($"[dim]{string.Join(" • ", navigationText)}[/]");
+    }
+
+    public static void DisplayErrorMessage(string message)
+    {
+        AnsiConsole.MarkupLine($"[red]{message}[/]");
     }
 
     public void Dispose()
