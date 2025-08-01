@@ -12,18 +12,18 @@
         <Version>1.0.0</Version>
         <Authors>Desz01ate</Authors>
         <Description>A project and session manager for Claude Code.</Description>
-        <PackageReadmeFile>../README.md</PackageReadmeFile>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
 
     <ItemGroup>
-        <None Include="../README.md" Pack="true" PackagePath="/"/>
-    </ItemGroup>
-    
-    <ItemGroup>
-        <PackageReference Include="Spectre.Console" Version="0.50.1-preview.0.22" />
-        <PackageReference Include="Concur" Version="1.4.0-beta-002" />
-        <PackageReference Include="System.Reactive" Version="6.0.1" />
+        <PackageReference Include="Spectre.Console" Version="0.50.1-preview.0.22"/>
+        <PackageReference Include="Concur" Version="1.4.0-beta-002"/>
+        <PackageReference Include="System.Reactive" Version="6.0.1"/>
         <PackageReference Include="System.Linq.Async" Version="6.0.3"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="../README.md" Pack="true" PackagePath="README.md"/>
     </ItemGroup>
 
 </Project>
