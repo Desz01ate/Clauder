@@ -60,27 +60,45 @@ public class ClaudeDataService : IDisposable
         this._fileChangedSubject.OnNext(e);
     }
 
-    public Task<IReadOnlyList<ClaudeProjectSummary>> LoadProjectSummariesAsync()
+    public async Task<IReadOnlyList<ClaudeProjectSummary>> LoadProjectSummariesAsync()
     {
         if (!Directory.Exists(ProjectDir))
         {
-            return Task.FromResult<IReadOnlyList<ClaudeProjectSummary>>(new List<ClaudeProjectSummary>());
+            return [];
         }
 
         var claudeProjectDirectories = Directory.GetDirectories(ProjectDir);
-        
-        this.projectSummaries = claudeProjectDirectories
-            .Select(ClaudeProjectSummary.FromDirectory)
-            .OrderBy(p => p.ProjectName)
-            .ToList();
 
-        return Task.FromResult<IReadOnlyList<ClaudeProjectSummary>>(this.projectSummaries);
+        var wg = new WaitGroup();
+        var ch = new DefaultChannel<ClaudeProjectSummary>();
+
+        foreach (var projectDirectory in claudeProjectDirectories)
+        {
+            Go(wg, async () =>
+            {
+                var project = ClaudeProjectSummary.FromDirectory(projectDirectory);
+
+                await ch.WriteAsync(project);
+            });
+        }
+
+        Go(async () =>
+        {
+            await wg.WaitAsync();
+            await ch.CompleteAsync();
+        });
+
+        this.projectSummaries = await ch
+                                      .OrderBy(p => p.ProjectName)
+                                      .ToListAsync();
+
+        return this.projectSummaries;
     }
 
     public async Task<ClaudeProjectInfo> LoadProjectSessionsAsync(ClaudeProjectSummary project)
     {
         var projectPath = project.ProjectPath;
-        
+
         if (this._projectCache.TryGetValue(projectPath, out var cachedProject))
         {
             return cachedProject;
@@ -88,7 +106,7 @@ public class ClaudeDataService : IDisposable
 
         var projectDirectoryName = projectPath.Replace(Path.DirectorySeparatorChar, '-');
         var projectDirectory = Path.Combine(ProjectDir, projectDirectoryName);
-        
+
         if (!Directory.Exists(projectDirectory))
         {
             throw new DirectoryNotFoundException($"Project directory not found: {projectDirectory}");
@@ -135,7 +153,7 @@ public class ClaudeDataService : IDisposable
         var projectInfo = ClaudeProjectInfo.From(groupedSessions);
 
         this._projectCache[projectPath] = projectInfo;
-        
+
         return projectInfo;
     }
 
