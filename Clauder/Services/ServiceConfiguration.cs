@@ -19,15 +19,8 @@ public static class ServiceConfiguration
         services.AddSingleton<IPageFactory, PageFactory>();
 
         // Configure channel for navigation
-        services.AddSingleton<Channel<NavigationCommand>>(static _ =>
-        {
-            var options = new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false,
-            };
-            return Channel.CreateUnbounded<NavigationCommand>(options);
-        });
+        services.AddSingleton<Channel<NavigationCommand>>(
+            static _ => Channel.CreateBounded<NavigationCommand>(1));
 
         services.AddSingleton<ChannelWriter<NavigationCommand>>(sp =>
             sp.GetRequiredService<Channel<NavigationCommand>>().Writer);
