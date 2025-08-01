@@ -1,6 +1,6 @@
-﻿using Clauder.Services;
+﻿using Clauder.Pages;
+using Clauder.Services;
 using Clauder.UI;
-using Spectre.Console;
 
 
 if (!ClaudeDataService.ClaudeDirectoryExists())
@@ -8,6 +8,12 @@ if (!ClaudeDataService.ClaudeDirectoryExists())
     ProjectDisplayService.DisplayErrorMessage($"Claude projects directory not found at: {ClaudeDataService.GetClaudeProjectsPath()}");
     return;
 }
+
+var main = new MainPage();
+
+await main.DisplayAsync();
+
+return;
 
 using var dataService = new ClaudeDataService();
 
