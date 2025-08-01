@@ -1,5 +1,7 @@
 namespace Clauder.Models;
 
+using System.Text.Json;
+
 public class ClaudeProjectSummary
 {
     public required string ProjectName { get; init; }
@@ -17,14 +19,13 @@ public class ClaudeProjectSummary
     public static ClaudeProjectSummary FromDirectory(string projectDirectory)
     {
         var directoryName = Path.GetFileName(projectDirectory);
-        var projectPath = directoryName.Replace('-', Path.DirectorySeparatorChar);
-        var projectName = Path.GetFileName(projectPath);
-
         var sessionFiles = Directory.GetFiles(projectDirectory, "*.jsonl");
         var sessionCount = sessionFiles.Length;
 
         DateTime? lastSessionTime = null;
         string? lastGitBranch = null;
+        string? projectPath = null;
+        string? projectName = null;
 
         if (sessionFiles.Length > 0)
         {
@@ -34,30 +35,50 @@ public class ClaudeProjectSummary
 
             lastSessionTime = mostRecentFile.Info.LastWriteTime;
 
-            lastGitBranch = TryGetGitBranchFromFirstLine(mostRecentFile.File);
+            var metadata = GetMetadata(mostRecentFile.File);
+
+            lastGitBranch = metadata?.GitBranch;
+
+            if (metadata?.Cwd != null)
+            {
+                projectPath = metadata.Cwd;
+                projectName = Path.GetFileName(projectPath);
+            }
+        }
+
+        // Fallback to directory name if no Cwd found in metadata
+        if (projectPath == null)
+        {
+            projectPath = directoryName.Replace('-', Path.DirectorySeparatorChar);
+            projectName = Path.GetFileName(projectPath);
         }
 
         return new ClaudeProjectSummary
         {
-            ProjectName = projectName,
-            ProjectPath = projectPath,
+            ProjectName = projectName!,
+            ProjectPath = projectPath!,
             ProjectDirectoryName = directoryName,
             SessionCount = sessionCount,
             LastSessionTime = lastSessionTime,
-            LastGitBranch = lastGitBranch
+            LastGitBranch = lastGitBranch,
         };
     }
 
-    private static string? TryGetGitBranchFromFirstLine(string sessionFile)
+    private static ClaudeSessionMetadata? GetMetadata(string sessionFile)
     {
         try
         {
-            var firstLine = File.ReadLines(sessionFile).FirstOrDefault();
+            // Read first few lines to find metadata with Cwd property
+            var lines = File.ReadLines(sessionFile).Take(5);
 
-            if (firstLine != null)
+            foreach (var line in lines)
             {
-                var metadata = System.Text.Json.JsonSerializer.Deserialize<ClaudeSessionMetadata>(firstLine);
-                return metadata?.GitBranch;
+                var metadata = JsonSerializer.Deserialize<ClaudeSessionMetadata>(line);
+
+                if (metadata?.Cwd != null)
+                {
+                    return metadata;
+                }
             }
         }
         catch
