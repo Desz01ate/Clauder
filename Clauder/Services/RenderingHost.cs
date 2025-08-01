@@ -6,6 +6,7 @@ using Clauder.Models;
 using Clauder.Pages;
 using Concur;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 using static Concur.ConcurRoutine;
 
 public sealed class RenderingHost : IDisposable
@@ -15,6 +16,22 @@ public sealed class RenderingHost : IDisposable
     private readonly INavigationContext _navigationContext;
     private readonly Stack<IPage> _pageStack = new();
     private CancellationTokenSource? _currentPageCancellation;
+    private string? _lastErrorMessage;
+    private DateTime? _lastErrorTime;
+
+    private static IRenderable EmptyErrorDisplay => new Markup(string.Empty);
+
+    private static Layout Layout =
+        new Layout("Root")
+            .SplitRows(
+                new Layout("Header").Size(3),
+                new Layout("Content"),
+                new Layout("Footer").Size(3)
+                                    .SplitColumns(
+                                        new Layout("FooterMain"),
+                                        new Layout("FooterError").Size(60)
+                                    )
+            );
 
     public RenderingHost(
         ChannelReader<NavigationCommand> navigationReader,
@@ -63,8 +80,21 @@ public sealed class RenderingHost : IDisposable
             }
             catch (Exception ex)
             {
-                AnsiConsole.WriteException(ex);
-                break;
+                // Try to recover from the error rather than breaking completely
+                try
+                {
+                    await this.HandleRenderingErrorAsync(currentPage, ex);
+
+                    // Brief pause before retrying
+                    await Task.Delay(1000, cancellationToken);
+                }
+                catch
+                {
+                    // If recovery fails, show error and break
+                    AnsiConsole.WriteException(ex);
+
+                    break;
+                }
             }
         }
 
@@ -75,19 +105,20 @@ public sealed class RenderingHost : IDisposable
     {
         Console.Title = page.Title;
 
-        var layout = new Layout("Root")
-            .SplitRows(
-                new Layout("Header").Size(3),
-                new Layout("Content"),
-                new Layout("Footer").Size(3)
-            );
-
-        await AnsiConsole.Live(layout)
+        await AnsiConsole.Live(Layout)
                          .StartAsync(async ctx =>
                          {
-                             await page.InitializeAsync(cancellationToken);
-                             
-                             await this.UpdateLayoutAsync(layout, page);
+                             try
+                             {
+                                 await page.InitializeAsync(cancellationToken);
+                             }
+                             catch (Exception ex)
+                             {
+                                 // Log initialization error but allow rendering to continue
+                                 System.Diagnostics.Debug.WriteLine($"Page initialization failed: {ex.Message}");
+                             }
+
+                             await this.UpdateLayoutAsync(page);
 
                              ctx.Refresh();
 
@@ -101,26 +132,111 @@ public sealed class RenderingHost : IDisposable
                                  // If not handled globally, let the page handle it
                                  if (!handled && page is IInputHandler inputHandler)
                                  {
-                                     await inputHandler.HandleInputAsync(keyInfo, cancellationToken);
+                                     try
+                                     {
+                                         await inputHandler.HandleInputAsync(keyInfo, cancellationToken);
+                                     }
+                                     catch (Exception ex)
+                                     {
+                                         // Log input handling errors but don't crash the application
+                                         System.Diagnostics.Debug.WriteLine($"Input handling failed: {ex.Message}");
+
+                                         // Update error state for display
+                                         this._lastErrorMessage = $"Input: {ex.Message}";
+                                         this._lastErrorTime = DateTime.Now;
+                                     }
                                  }
 
                                  // Always re-render after input to reflect any state changes
-                                 await this.UpdateLayoutAsync(layout, page);
+                                 await this.UpdateLayoutAsync(page);
 
                                  ctx.Refresh();
                              }
                          });
     }
 
-    private async Task UpdateLayoutAsync(Layout layout, IPage page)
+    private async Task UpdateLayoutAsync(IPage page)
     {
-        var header = await page.RenderHeaderAsync();
-        var body = await page.RenderBodyAsync();
-        var footer = await page.RenderFooterAsync();
+        var header =
+            await this.SafeRenderFragmentAsync(
+                page.RenderHeaderAsync,
+                "Header",
+                static () => new Markup("[red]Header rendering failed[/]"));
 
-        layout["Header"].Update(header);
-        layout["Content"].Update(body);
-        layout["Footer"].Update(footer);
+        var body =
+            await this.SafeRenderFragmentAsync(
+                page.RenderBodyAsync,
+                "Body",
+                static () => new Markup("[red]Content rendering failed[/]"));
+
+        var footer =
+            await this.SafeRenderFragmentAsync(
+                page.RenderFooterAsync,
+                "Footer",
+                static () => new Markup("[red]Footer rendering failed[/]"));
+
+        Layout["Header"].Update(header);
+        Layout["Content"].Update(body);
+        Layout["FooterMain"].Update(footer);
+        Layout["FooterError"].Update(this.CreateErrorDisplay());
+    }
+
+    private async Task<IRenderable> SafeRenderFragmentAsync(
+        Func<ValueTask<IRenderable>> renderFunc,
+        string fragmentName,
+        Func<IRenderable> fallbackRenderer)
+    {
+        try
+        {
+            return await renderFunc();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Fragment rendering failed ({fragmentName}): {ex.Message}");
+
+            // Update error state for display
+            this._lastErrorMessage = $"{fragmentName}: {ex.Message}";
+            this._lastErrorTime = DateTime.Now;
+
+            return fallbackRenderer();
+        }
+    }
+
+    private Task HandleRenderingErrorAsync(IPage currentPage, Exception ex)
+    {
+        // Log the error
+        System.Diagnostics.Debug.WriteLine($"Rendering error for page {currentPage.GetType().Name}: {ex.Message}");
+
+        // Update error state for footer display instead of blocking modal
+        this._lastErrorMessage = $"Page: {ex.Message}";
+        this._lastErrorTime = DateTime.Now;
+
+        return Task.CompletedTask;
+    }
+
+    private IRenderable CreateErrorDisplay()
+    {
+        if (this._lastErrorMessage == null || this._lastErrorTime == null)
+        {
+            return EmptyErrorDisplay;
+        }
+
+        // Auto-clear errors after 5 seconds
+        var timeSinceError = DateTime.Now - this._lastErrorTime.Value;
+
+        if (timeSinceError.TotalSeconds > 5)
+        {
+            this._lastErrorMessage = null;
+            this._lastErrorTime = null;
+
+            return EmptyErrorDisplay;
+        }
+
+        var errorText = this._lastErrorMessage.Length > 55
+            ? this._lastErrorMessage[..52] + "..."
+            : this._lastErrorMessage;
+
+        return new Markup($"[red]⚠ {errorText}[/]\n[dim][/]");
     }
 
     private async Task<bool> HandleGlobalInputAsync(ConsoleKeyInfo keyInfo)
@@ -172,6 +288,10 @@ public sealed class RenderingHost : IDisposable
         // Cancel current page display to allow navigation
         await (this._currentPageCancellation?.CancelAsync() ?? Task.CompletedTask);
 
+        // Clear any error state when navigating
+        this._lastErrorMessage = null;
+        this._lastErrorTime = null;
+
         this._pageStack.Push(page);
 
         // Give the rendering loop a moment to pick up the new page
@@ -182,6 +302,10 @@ public sealed class RenderingHost : IDisposable
     {
         // Cancel current page display to allow navigation
         this._currentPageCancellation?.Cancel();
+
+        // Clear any error state when navigating back
+        this._lastErrorMessage = null;
+        this._lastErrorTime = null;
 
         if (this._pageStack.Count > 0)
         {

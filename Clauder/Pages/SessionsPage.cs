@@ -120,9 +120,9 @@ public sealed class SessionsPage : IPage, IInputHandler
             // Highlight different session types
             var isCorrupted = session.Type == "corrupted";
             var isAISummary = session.Type == "ai-summary";
-            
+
             string typeDisplay, messageDisplay;
-            
+
             if (isAISummary)
             {
                 typeDisplay = "[blue]AI Summary[/]";
@@ -217,9 +217,8 @@ public sealed class SessionsPage : IPage, IInputHandler
                 var selectedSession = sortedSessions[actualIndex];
 
                 // Don't launch corrupted sessions or AI summaries
-                if (selectedSession.Type == "corrupted" || selectedSession.Type == "ai-summary")
+                if (selectedSession.Type is "corrupted" or "ai-summary")
                 {
-                    // Could show a message here, but for now just ignore the selection
                     break;
                 }
 
