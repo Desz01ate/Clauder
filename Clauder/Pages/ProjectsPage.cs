@@ -24,21 +24,21 @@ public sealed class ProjectsPage : IDisplay
         this._dataService = dataService;
         this._navigationService = navigationService;
 
-        this._projects = new List<ClaudeProjectSummary>();
+        this._projects = Array.Empty<ClaudeProjectSummary>();
         this._searchFilterSubject = new BehaviorSubject<string>(string.Empty);
 
         // Combine data service changes with search filter changes
         var filteredProjects = dataService.ProjectSummariesObservable
                                           .CombineLatest(this._searchFilterSubject, (projectData, filter) =>
                                               string.IsNullOrWhiteSpace(filter)
-                                                  ? projectData.OrderBy(p => p.ProjectName).ToList()
+                                                  ? projectData.OrderBy(p => p.ProjectName)
                                                   : projectData.Where(p => p.ProjectName.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                                                               .OrderBy(p => p.ProjectName).ToList());
+                                                               .OrderBy(p => p.ProjectName));
 
         // Subscribe to changes to update current filtered projects
         filteredProjects.Subscribe(filtered =>
         {
-            this._projects = filtered;
+            this._projects = filtered.ToList();
             this.ResetPagination();
         });
 
@@ -203,11 +203,11 @@ public sealed class ProjectsPage : IDisplay
         table.AddColumn("[bold]Sessions[/]");
         table.AddColumn("[bold]Git Branch[/]");
 
-        var pageProjects = projects.Skip(currentPage * PageSize).Take(PageSize).ToList();
+        var pageProjects = projects.Skip(currentPage * PageSize).Take(PageSize);
 
-        for (var i = 0; i < pageProjects.Count; i++)
+        var i = 0;
+        foreach (var project in pageProjects)
         {
-            var project = pageProjects[i];
             var sessionCount = project.SessionCount;
 
             var sessionCountText = sessionCount == 1
@@ -227,6 +227,7 @@ public sealed class ProjectsPage : IDisplay
                 sessionCountText,
                 $"[dim]{project.LastGitBranch ?? "N/A"}[/]"
             );
+            i++;
         }
 
         AnsiConsole.Write(table);
@@ -237,12 +238,13 @@ public sealed class ProjectsPage : IDisplay
     private NavigationAction ShowProjectNavigation(int currentPage, int totalPages)
     {
         AnsiConsole.WriteLine();
-        var navigationText = new List<string>
+        var navigationItems = new[]
         {
             "[green]↑↓[/] Select",
             "[green]Enter[/] View Sessions",
             "[yellow]S[/] Search",
         };
+        var navigationText = new List<string>(navigationItems);
 
         if (!string.IsNullOrEmpty(this._searchFilterSubject.Value))
             navigationText.Add("[yellow]C[/] Clear Search");
@@ -333,7 +335,7 @@ public sealed class ProjectsPage : IDisplay
 
     private static void ShowSearchNavigation()
     {
-        var navigationText = new List<string>
+        var navigationText = new[]
         {
             "[yellow]S[/] Search Again",
             "[yellow]C[/] Clear Search",

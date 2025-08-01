@@ -2,7 +2,7 @@ namespace Clauder.Models;
 
 public class ClaudeProjectInfo
 {
-    private readonly List<ClaudeSessionMetadata> _sessions;
+    private readonly IReadOnlyList<ClaudeSessionMetadata> _sessions;
 
     public ClaudeProjectInfo(IEnumerable<ClaudeSessionMetadata> sessions)
     {
@@ -13,7 +13,7 @@ public class ClaudeProjectInfo
 
     public string ProjectPath { get; init; }
 
-    public IReadOnlyCollection<ClaudeSessionMetadata> Sessions => this._sessions;
+    public IReadOnlyList<ClaudeSessionMetadata> Sessions => this._sessions;
 
     public static ClaudeProjectInfo From(IGrouping<string, ClaudeSessionMetadata> group)
     {

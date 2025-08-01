@@ -14,7 +14,7 @@ public class ClaudeDataService : IDisposable
     private readonly static string ClaudeDirectory = Path.Combine(HomeDirectory, ".claude");
     private readonly static string ProjectDir = Path.Combine(ClaudeDirectory, "projects");
 
-    private List<ClaudeProjectSummary> projectSummaries = [];
+    private IReadOnlyList<ClaudeProjectSummary> projectSummaries = Array.Empty<ClaudeProjectSummary>();
     private readonly Dictionary<string, ClaudeProjectInfo> _projectCache = new();
     private readonly FileSystemWatcher? _fileWatcher;
     private readonly Subject<FileSystemEventArgs> _fileChangedSubject;
@@ -88,9 +88,10 @@ public class ClaudeDataService : IDisposable
             await ch.CompleteAsync();
         });
 
-        this.projectSummaries = await ch
+        var sortedProjects = await ch
                                       .OrderBy(p => p.ProjectName)
                                       .ToListAsync();
+        this.projectSummaries = sortedProjects;
 
         return this.projectSummaries;
     }

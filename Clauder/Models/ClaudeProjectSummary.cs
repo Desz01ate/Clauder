@@ -30,8 +30,7 @@ public class ClaudeProjectSummary
         {
             var mostRecentFile = sessionFiles
                                  .Select(f => new { File = f, Info = new FileInfo(f) })
-                                 .OrderByDescending(x => x.Info.LastWriteTime)
-                                 .First();
+                                 .MaxBy(x => x.Info.LastWriteTime)!;
 
             lastSessionTime = mostRecentFile.Info.LastWriteTime;
 

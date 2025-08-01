@@ -57,11 +57,12 @@ public sealed class SessionsPage : IDisplay
         }
 
         var sortedSessions = this._project.Sessions.OrderByDescending(s => s.Timestamp).ToList();
-        var totalPages = (int)Math.Ceiling((double)sortedSessions.Count / PageSize);
+        var sessionCount = sortedSessions.Count;
+        var totalPages = (int)Math.Ceiling((double)sessionCount / PageSize);
 
         // Ensure current page and selection are within bounds
         this._currentPage = Math.Min(this._currentPage, totalPages - 1);
-        var itemsOnCurrentPage = Math.Min(PageSize, sortedSessions.Count - this._currentPage * PageSize);
+        var itemsOnCurrentPage = Math.Min(PageSize, sessionCount - this._currentPage * PageSize);
         this._selectedIndex = Math.Min(this._selectedIndex, itemsOnCurrentPage - 1);
 
         while (true)
@@ -73,7 +74,7 @@ public sealed class SessionsPage : IDisplay
 
             DisplaySessionPageWithSelection(this._project, sortedSessions, this._currentPage, totalPages, this._selectedIndex);
 
-            if (totalPages <= 1 && sortedSessions.Count <= PageSize)
+            if (totalPages <= 1 && sessionCount <= PageSize)
             {
                 var result = ShowSessionNavigation(this._currentPage, totalPages);
                 var singlePageResult = this.HandleSessionNavigationResult(result, sortedSessions, this._currentPage, this._selectedIndex);
@@ -136,11 +137,11 @@ public sealed class SessionsPage : IDisplay
         table.AddColumn("[bold]Type[/]");
         table.AddColumn("[bold]Message Preview[/]");
 
-        var pageSessions = sessions.Skip(currentPage * PageSize).Take(PageSize).ToList();
+        var pageSessions = sessions.Skip(currentPage * PageSize).Take(PageSize);
 
-        for (var i = 0; i < pageSessions.Count; i++)
+        var i = 0;
+        foreach (var session in pageSessions)
         {
-            var session = pageSessions[i];
             var sessionIdShort = session.SessionId?.Length > 8 ? session.SessionId[..8] + "..." : session.SessionId ?? "N/A";
             var messagePreview = session.Message?.Content?.Length > 50
                 ? session.Message.Content[..50] + "..."
@@ -158,23 +159,25 @@ public sealed class SessionsPage : IDisplay
                 $"[dim]{session.Type ?? "N/A"}[/]",
                 $"[dim]{messagePreview}[/]"
             );
+            i++;
         }
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[dim]Project: {project.ProjectPath}[/]");
-        AnsiConsole.MarkupLine($"[dim]Total sessions: {sessions.Count}[/]");
+        AnsiConsole.MarkupLine($"[dim]Total sessions: {project.Sessions.Count}[/]");
     }
 
     private static NavigationAction ShowSessionNavigation(int currentPage, int totalPages)
     {
         AnsiConsole.WriteLine();
-        var navigationText = new List<string>
+        var navigationItems = new[]
         {
             "[green]↑↓[/] Select",
             "[green]Enter[/] View Session",
             "[cyan]N[/] New Session",
         };
+        var navigationText = new List<string>(navigationItems);
 
         if (currentPage > 0)
             navigationText.Add("[blue]←[/] Previous ");
