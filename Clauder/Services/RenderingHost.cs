@@ -12,18 +12,18 @@ public sealed class RenderingHost : IDisposable
 {
     private readonly ChannelReader<NavigationCommand> _navigationReader;
     private readonly IPageFactory _pageFactory;
-    private readonly INavigationService _navigationService;
+    private readonly INavigationContext _navigationContext;
     private readonly Stack<IPage> _pageStack = new();
     private CancellationTokenSource? _currentPageCancellation;
 
     public RenderingHost(
         ChannelReader<NavigationCommand> navigationReader,
         IPageFactory pageFactory,
-        INavigationService navigationService)
+        INavigationContext navigationContext)
     {
         this._navigationReader = navigationReader;
         this._pageFactory = pageFactory;
-        this._navigationService = navigationService;
+        this._navigationContext = navigationContext;
     }
 
     public async Task RunAsync()
@@ -129,7 +129,7 @@ public sealed class RenderingHost : IDisposable
         {
             case ConsoleKey.Escape:
             case ConsoleKey.B:
-                await this._navigationService.NavigateBackAsync();
+                await this._navigationContext.NavigateBackAsync();
                 return true;
 
             default:

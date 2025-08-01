@@ -4,11 +4,11 @@ using System.Threading.Channels;
 using Clauder.Abstractions;
 using Clauder.Models;
 
-public sealed class NavigationService : INavigationService
+public sealed class NavigationContext : INavigationContext
 {
     private readonly ChannelWriter<NavigationCommand> _navigationWriter;
 
-    public NavigationService(ChannelWriter<NavigationCommand> navigationWriter)
+    public NavigationContext(ChannelWriter<NavigationCommand> navigationWriter)
     {
         this._navigationWriter = navigationWriter;
     }

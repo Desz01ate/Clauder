@@ -28,7 +28,7 @@ public static class ServiceConfiguration
         services.AddSingleton<ChannelReader<NavigationCommand>>(sp =>
             sp.GetRequiredService<Channel<NavigationCommand>>().Reader);
 
-        services.AddSingleton<INavigationService, NavigationService>();
+        services.AddSingleton<INavigationContext, NavigationContext>();
         services.AddSingleton<RenderingHost>();
 
         // Register pages
