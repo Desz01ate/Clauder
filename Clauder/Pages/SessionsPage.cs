@@ -158,8 +158,9 @@ public sealed class SessionsPage : IPage, IInputHandler
         var navigationItems = new[]
         {
             "[green]↑↓[/] Select",
-            "[green]Enter[/] View Session",
+            "[green]Enter[/] Resume Session",
             "[cyan]N[/] New Session",
+            "[red]B[/] Back",
         };
         var navigationText = new List<string>(navigationItems);
 
@@ -167,7 +168,6 @@ public sealed class SessionsPage : IPage, IInputHandler
             navigationText.Add("[blue]←[/] Previous ");
         if (currentPage < totalPages - 1)
             navigationText.Add(" Next [blue]→[/]");
-        navigationText.Add("[red]B[/] Back");
 
         var footerContent = $"[dim]{string.Join(" • ", navigationText)}[/]\n";
         footerContent += $"[dim]Project: {this._project.ProjectPath}[/]\n";
