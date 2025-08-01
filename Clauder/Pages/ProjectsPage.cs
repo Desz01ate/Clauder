@@ -12,7 +12,7 @@ using Spectre.Console.Rendering;
 public sealed class ProjectsPage : IPage, IInputHandler
 {
     private readonly ClaudeDataService _dataService;
-    private readonly INavigationService _navigationService;
+    private readonly INavigationContext _navigationContext;
 
     private IReadOnlyList<ClaudeProjectSummary> _projects;
     private const int PageSize = 10;
@@ -20,10 +20,10 @@ public sealed class ProjectsPage : IPage, IInputHandler
     private int _selectedIndex;
     private readonly BehaviorSubject<string> _searchFilterSubject;
 
-    public ProjectsPage(ClaudeDataService dataService, INavigationService navigationService)
+    public ProjectsPage(ClaudeDataService dataService, INavigationContext navigationContext)
     {
         this._dataService = dataService;
-        this._navigationService = navigationService;
+        this._navigationContext = navigationContext;
 
         this._projects = [];
         this._searchFilterSubject = new BehaviorSubject<string>(string.Empty);
@@ -243,7 +243,7 @@ public sealed class ProjectsPage : IPage, IInputHandler
 
                 var projectInfo = await this._dataService.LoadProjectSessionsAsync(project);
 
-                await this._navigationService.NavigateToAsync<SessionsPage>(projectInfo);
+                await this._navigationContext.NavigateToAsync<SessionsPage>(projectInfo);
 
                 break;
             }
@@ -267,7 +267,7 @@ public sealed class ProjectsPage : IPage, IInputHandler
             }
             case NavigationAction.Settings:
             {
-                await this._navigationService.NavigateToAsync<SettingsPage>();
+                await this._navigationContext.NavigateToAsync<SettingsPage>();
 
                 break;
             }
@@ -279,7 +279,7 @@ public sealed class ProjectsPage : IPage, IInputHandler
             }
             case NavigationAction.Quit:
             {
-                await this._navigationService.NavigateBackAsync();
+                await this._navigationContext.NavigateBackAsync();
                 break;
             }
         }

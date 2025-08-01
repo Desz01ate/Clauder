@@ -8,8 +8,6 @@ using static Concur.ConcurRoutine;
 
 namespace Clauder.Services;
 
-using Abstractions;
-
 public class ClaudeDataService : IDisposable
 {
     private readonly ClaudeConfiguration _configuration;
@@ -126,17 +124,38 @@ public class ClaudeDataService : IDisposable
 
                 if (firstLine is null)
                 {
+                    // Create placeholder metadata for empty files
+                    var emptyFileMetadata = CreatePlaceholderMetadata(sessionFile, projectPath);
+                    await ch.WriteAsync(emptyFileMetadata);
                     return;
                 }
 
-                var metadata = JsonSerializer.Deserialize<ClaudeSessionMetadata>(firstLine);
-
-                if (metadata is null)
+                try
                 {
-                    return;
-                }
+                    var metadata = JsonSerializer.Deserialize<ClaudeSessionMetadata>(firstLine);
 
-                await ch.WriteAsync(metadata);
+                    if (metadata is null)
+                    {
+                        // Create placeholder metadata for null deserialization
+                        var nullMetadata = CreatePlaceholderMetadata(sessionFile, projectPath);
+                        await ch.WriteAsync(nullMetadata);
+                        return;
+                    }
+
+                    // Ensure Cwd is set for valid metadata
+                    if (string.IsNullOrEmpty(metadata.Cwd))
+                    {
+                        metadata = metadata with { Cwd = projectPath };
+                    }
+
+                    await ch.WriteAsync(metadata);
+                }
+                catch
+                {
+                    // Create placeholder metadata for corrupted files
+                    var corruptedMetadata = CreatePlaceholderMetadata(sessionFile, projectPath);
+                    await ch.WriteAsync(corruptedMetadata);
+                }
             });
         }
 
@@ -146,8 +165,7 @@ public class ClaudeDataService : IDisposable
             await ch.CompleteAsync();
         });
 
-        var sessions = await ch.Where(s => s.Cwd is not null)
-                               .OrderBy(s => s.Timestamp)
+        var sessions = await ch.OrderBy(s => s.Timestamp)
                                .ToListAsync();
 
         var groupedSessions = sessions.GroupBy(s => s.Cwd!).First();
@@ -158,9 +176,62 @@ public class ClaudeDataService : IDisposable
         return projectInfo;
     }
 
-    public bool ClaudeDirectoryExists()
+    private record struct FileHeaderInfo(
+        string Type,
+        string Content);
+
+    private static ClaudeSessionMetadata CreatePlaceholderMetadata(string sessionFile, string projectPath)
     {
-        return Directory.Exists(this._configuration.ClaudeProjectDirectory);
+        var fileInfo = new FileInfo(sessionFile);
+        var sessionId = Path.GetFileNameWithoutExtension(sessionFile);
+
+        var info = GetFileHeader(sessionFile);
+        var type = info.Type;
+
+        return new ClaudeSessionMetadata
+        {
+            SessionId = sessionId,
+            Cwd = projectPath,
+            Timestamp = fileInfo.LastWriteTime,
+            Message = new Message
+            {
+                Role = "system",
+                Content = info.Content,
+            },
+            Uuid = Guid.NewGuid().ToString(),
+            UserType = "system",
+            Type = type,
+            IsMeta = true,
+            IsSidechain = false,
+            ParentUuid = null,
+            Version = null,
+            GitBranch = null,
+        };
+    }
+
+    private static FileHeaderInfo GetFileHeader(string sessionFile)
+    {
+        try
+        {
+            var firstLine = File.ReadLines(sessionFile).FirstOrDefault();
+
+            if (firstLine == null)
+            {
+                return new FileHeaderInfo("corrupted", string.Empty);
+            }
+
+            // Try to parse as AI summary format first
+            using var document = JsonDocument.Parse(firstLine);
+            var root = document.RootElement;
+
+            var type = root.TryGetProperty("type", out var typeProperty) ? typeProperty.GetString()! : "corrupted";
+
+            return new FileHeaderInfo(type, firstLine);
+        }
+        catch
+        {
+            return new FileHeaderInfo("corrupted", string.Empty);
+        }
     }
 
     public static bool ClaudeDirectoryExists(ClaudeConfiguration configuration)

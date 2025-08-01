@@ -1,6 +1,6 @@
 namespace Clauder.Abstractions;
 
-public interface INavigationService : IDisposable
+public interface INavigationContext : IDisposable
 {
     Task NavigateToAsync<T>(params object[] args) where T : class, IPage;
 

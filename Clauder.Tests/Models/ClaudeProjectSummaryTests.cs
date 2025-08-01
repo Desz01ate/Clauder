@@ -92,7 +92,7 @@ public class ClaudeProjectSummaryTests : IDisposable
         var summary = ClaudeProjectSummary.FromDirectory(projectDir);
 
         summary.Should().NotBeNull();
-        summary.SessionCount.Should().Be(1); // File exists but can't be parsed
+        summary.SessionCount.Should().Be(1); // Count physical files (now consistent with session details page)
         summary.LastGitBranch.Should().BeNull(); // Should not crash
     }
 

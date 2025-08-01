@@ -9,17 +9,17 @@ using Spectre.Console.Rendering;
 public sealed class SessionsPage : IPage, IInputHandler
 {
     private readonly ClaudeProjectInfo _project;
-    private readonly INavigationService _navigationService;
+    private readonly INavigationContext _navigationContext;
     private readonly IClaudeProcessService _claudeProcessService;
 
     private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
 
-    public SessionsPage(ClaudeProjectInfo project, INavigationService navigationService, IClaudeProcessService claudeProcessService)
+    public SessionsPage(ClaudeProjectInfo project, INavigationContext navigationContext, IClaudeProcessService claudeProcessService)
     {
         this._project = project;
-        this._navigationService = navigationService;
+        this._navigationContext = navigationContext;
         this._claudeProcessService = claudeProcessService;
     }
 
@@ -117,13 +117,35 @@ public sealed class SessionsPage : IPage, IInputHandler
             var selectionMarker = isSelected ? "[yellow]>[/]" : " ";
             var sessionId = isSelected ? $"[yellow]{sessionIdShort}[/]" : $"[dim]{sessionIdShort}[/]";
 
+            // Highlight different session types
+            var isCorrupted = session.Type == "corrupted";
+            var isAISummary = session.Type == "ai-summary";
+            
+            string typeDisplay, messageDisplay;
+            
+            if (isAISummary)
+            {
+                typeDisplay = "[blue]AI Summary[/]";
+                messageDisplay = "[blue]AI Generated Summary[/]";
+            }
+            else if (isCorrupted)
+            {
+                typeDisplay = "[red]Corrupted[/]";
+                messageDisplay = "[red]Invalid or Corrupted Session File[/]";
+            }
+            else
+            {
+                typeDisplay = $"[dim]{session.Type ?? "N/A"}[/]";
+                messageDisplay = $"[dim]{messagePreview}[/]";
+            }
+
             table.AddRow(
                 selectionMarker,
                 sessionId,
                 $"[dim]{session.Timestamp:yyyy-MM-dd HH:mm:ss}[/]",
                 $"[dim]{session.GitBranch ?? "N/A"}[/]",
-                $"[dim]{session.Type ?? "N/A"}[/]",
-                $"[dim]{messagePreview}[/]"
+                typeDisplay,
+                messageDisplay
             );
             i++;
         }
@@ -192,8 +214,16 @@ public sealed class SessionsPage : IPage, IInputHandler
             case NavigationAction.SelectItem:
             {
                 var actualIndex = currentPage * PageSize + selectedIndex;
+                var selectedSession = sortedSessions[actualIndex];
 
-                await this._claudeProcessService.LaunchExistingSessionAsync(sortedSessions[actualIndex]);
+                // Don't launch corrupted sessions or AI summaries
+                if (selectedSession.Type == "corrupted" || selectedSession.Type == "ai-summary")
+                {
+                    // Could show a message here, but for now just ignore the selection
+                    break;
+                }
+
+                await this._claudeProcessService.LaunchExistingSessionAsync(selectedSession);
 
                 break;
             }
@@ -217,7 +247,7 @@ public sealed class SessionsPage : IPage, IInputHandler
             }
             case NavigationAction.Back:
             {
-                await this._navigationService.NavigateBackAsync();
+                await this._navigationContext.NavigateBackAsync();
 
                 break;
             }

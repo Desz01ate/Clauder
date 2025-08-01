@@ -5,10 +5,10 @@ using System.Text.Json.Serialization;
 public sealed record Message
 {
     [JsonPropertyName("role")]
-    public string Role { get; init; }
+    public string? Role { get; init; }
 
     [JsonPropertyName("content")]
-    public string Content { get; init; }
+    public string? Content { get; init; }
 }
 
 public sealed record ClaudeSessionMetadata
@@ -38,7 +38,7 @@ public sealed record ClaudeSessionMetadata
     public string? Type { get; init; }
 
     [JsonPropertyName("message")]
-    public Message Message { get; init; }
+    public Message? Message { get; init; }
 
     [JsonPropertyName("isMeta")]
     public bool IsMeta { get; init; }
