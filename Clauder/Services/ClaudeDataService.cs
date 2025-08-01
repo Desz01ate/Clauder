@@ -56,39 +56,9 @@ public class ClaudeDataService : IDisposable
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        _projectCache.Clear();
+        this._projectCache.Clear();
         this._fileChangedSubject.OnNext(e);
     }
-
-    [Obsolete("Use LoadProjectSummariesAsync and LoadProjectSessionsAsync for better performance")]
-    public async Task<IReadOnlyList<ClaudeProjectInfo>> LoadProjectsAsync()
-    {
-        var summaries = await LoadProjectSummariesAsync();
-        var projects = new List<ClaudeProjectInfo>();
-        
-        foreach (var summary in summaries)
-        {
-            try
-            {
-                var project = await LoadProjectSessionsAsync(summary.ProjectPath);
-                projects.Add(project);
-            }
-            catch
-            {
-            }
-        }
-        
-        return projects;
-    }
-
-    public IReadOnlyList<ClaudeProjectInfo> Projects => 
-        projectSummaries.Select(s => _projectCache.TryGetValue(s.ProjectPath, out var cached) 
-            ? cached 
-            : new ClaudeProjectInfo(new List<ClaudeSessionMetadata>()) 
-            { 
-                ProjectName = s.ProjectName, 
-                ProjectPath = s.ProjectPath 
-            }).ToList();
 
     public Task<IReadOnlyList<ClaudeProjectSummary>> LoadProjectSummariesAsync()
     {
@@ -107,9 +77,11 @@ public class ClaudeDataService : IDisposable
         return Task.FromResult<IReadOnlyList<ClaudeProjectSummary>>(this.projectSummaries);
     }
 
-    public async Task<ClaudeProjectInfo> LoadProjectSessionsAsync(string projectPath)
+    public async Task<ClaudeProjectInfo> LoadProjectSessionsAsync(ClaudeProjectSummary project)
     {
-        if (_projectCache.TryGetValue(projectPath, out var cachedProject))
+        var projectPath = project.ProjectPath;
+        
+        if (this._projectCache.TryGetValue(projectPath, out var cachedProject))
         {
             return cachedProject;
         }
@@ -161,8 +133,8 @@ public class ClaudeDataService : IDisposable
 
         var groupedSessions = sessions.GroupBy(s => s.Cwd!).First();
         var projectInfo = ClaudeProjectInfo.From(groupedSessions);
-        
-        _projectCache[projectPath] = projectInfo;
+
+        this._projectCache[projectPath] = projectInfo;
         
         return projectInfo;
     }

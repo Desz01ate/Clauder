@@ -124,7 +124,7 @@ public sealed class ProjectsPage : IDisplay
                     {
                         if (singlePageResult != null)
                         {
-                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(singlePageResult.ProjectPath);
+                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(singlePageResult);
                             var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
 
                             await this._navigationService.NavigateToAsync(sessionsPage);
@@ -150,7 +150,7 @@ public sealed class ProjectsPage : IDisplay
                     {
                         if (handleResult != null)
                         {
-                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(handleResult.ProjectPath);
+                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(handleResult);
                             var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
 
                             await this._navigationService.NavigateToAsync(sessionsPage);
