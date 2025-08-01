@@ -12,9 +12,18 @@ public sealed class SessionsPage : IPage, IInputHandler
     private readonly INavigationContext _navigationContext;
     private readonly IClaudeProcessService _claudeProcessService;
 
-    private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
+
+    private static int PageSize
+    {
+        get
+        {
+            var consoleHeight = Console.WindowHeight;
+
+            return (int)(consoleHeight * 0.7);
+        }
+    }
 
     public SessionsPage(ClaudeProjectInfo project, INavigationContext navigationContext, IClaudeProcessService claudeProcessService)
     {
