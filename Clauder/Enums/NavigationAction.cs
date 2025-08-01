@@ -10,6 +10,7 @@ public enum NavigationAction
     PreviousPage,
     Back,
     Search,
+    Settings,
     NewSession,
     Quit,
 }

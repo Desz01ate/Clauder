@@ -4,6 +4,8 @@ Clauder is a .NET tool that allows you to browse and manage your Claude projects
 
 ## Installation
 
+[![nuget](https://img.shields.io/nuget/v/Clauder.svg)](https://www.nuget.org/packages/Clauder/)
+
 You can install Clauder as a global .NET tool:
 
 ```bash

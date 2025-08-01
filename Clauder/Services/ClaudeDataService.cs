@@ -8,29 +8,29 @@ using static Concur.ConcurRoutine;
 
 namespace Clauder.Services;
 
+using Abstractions;
+
 public class ClaudeDataService : IDisposable
 {
-    private readonly static string HomeDirectory = Environment.GetEnvironmentVariable("HOME")!;
-    private readonly static string ClaudeDirectory = Path.Combine(HomeDirectory, ".claude");
-    private readonly static string ProjectDir = Path.Combine(ClaudeDirectory, "projects");
+    private readonly ClaudeConfiguration _configuration;
 
-    private IReadOnlyList<ClaudeProjectSummary> projectSummaries = [];
     private readonly Dictionary<string, ClaudeProjectInfo> _projectCache = new();
     private readonly FileSystemWatcher? _fileWatcher;
     private readonly Subject<FileSystemEventArgs> _fileChangedSubject;
 
-    public IReadOnlyList<ClaudeProjectSummary> ProjectSummaries => this.projectSummaries;
+    public IReadOnlyList<ClaudeProjectSummary> ProjectSummaries { get; private set; } = [];
 
     public IObservable<IReadOnlyList<ClaudeProjectSummary>> ProjectSummariesObservable { get; }
 
-    public ClaudeDataService()
+    public ClaudeDataService(ClaudeConfiguration configuration)
     {
+        this._configuration = configuration;
         this._fileChangedSubject = new Subject<FileSystemEventArgs>();
 
         // Create file watcher for the projects directory only if it exists
-        if (Directory.Exists(ProjectDir))
+        if (Directory.Exists(this._configuration.ClaudeProjectDirectory))
         {
-            this._fileWatcher = new FileSystemWatcher(ProjectDir)
+            this._fileWatcher = new FileSystemWatcher(this._configuration.ClaudeProjectDirectory)
             {
                 IncludeSubdirectories = true,
                 NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
@@ -62,12 +62,12 @@ public class ClaudeDataService : IDisposable
 
     public async Task<IReadOnlyList<ClaudeProjectSummary>> LoadProjectSummariesAsync()
     {
-        if (!Directory.Exists(ProjectDir))
+        if (!Directory.Exists(this._configuration.ClaudeProjectDirectory))
         {
             return [];
         }
 
-        var claudeProjectDirectories = Directory.GetDirectories(ProjectDir);
+        var claudeProjectDirectories = Directory.GetDirectories(this._configuration.ClaudeProjectDirectory);
 
         var wg = new WaitGroup();
         var ch = new DefaultChannel<ClaudeProjectSummary>();
@@ -89,11 +89,11 @@ public class ClaudeDataService : IDisposable
         });
 
         var sortedProjects = await ch
-                                      .OrderBy(p => p.ProjectName)
-                                      .ToListAsync();
-        this.projectSummaries = sortedProjects;
+                                   .OrderBy(p => p.ProjectName)
+                                   .ToListAsync();
+        this.ProjectSummaries = sortedProjects;
 
-        return this.projectSummaries;
+        return this.ProjectSummaries;
     }
 
     public async Task<ClaudeProjectInfo> LoadProjectSessionsAsync(ClaudeProjectSummary project)
@@ -106,7 +106,7 @@ public class ClaudeDataService : IDisposable
         }
 
         var projectDirectoryName = projectPath.Replace(Path.DirectorySeparatorChar, '-');
-        var projectDirectory = Path.Combine(ProjectDir, projectDirectoryName);
+        var projectDirectory = Path.Combine(this._configuration.ClaudeProjectDirectory, projectDirectoryName);
 
         if (!Directory.Exists(projectDirectory))
         {
@@ -158,21 +158,16 @@ public class ClaudeDataService : IDisposable
         return projectInfo;
     }
 
-    public static bool ClaudeDirectoryExists()
+    public bool ClaudeDirectoryExists()
     {
-        var homeDirectory = Environment.GetEnvironmentVariable("HOME")!;
-        var claudeDirectory = Path.Combine(homeDirectory, ".claude");
-        var projectDir = Path.Combine(claudeDirectory, "projects");
-
-        return Directory.Exists(projectDir);
+        return Directory.Exists(this._configuration.ClaudeProjectDirectory);
     }
 
-    public static string GetClaudeProjectsPath()
+    public static bool ClaudeDirectoryExists(ClaudeConfiguration configuration)
     {
-        var homeDirectory = Environment.GetEnvironmentVariable("HOME")!;
-        var claudeDirectory = Path.Combine(homeDirectory, ".claude");
+        var projectDir = configuration.ClaudeProjectDirectory;
 
-        return Path.Combine(claudeDirectory, "projects");
+        return Directory.Exists(projectDir);
     }
 
     public void Dispose()

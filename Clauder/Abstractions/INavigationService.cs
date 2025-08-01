@@ -1,10 +1,8 @@
 namespace Clauder.Abstractions;
 
-public interface INavigationService
+public interface INavigationService : IDisposable
 {
-    Task NavigateToAsync<T>(T page) where T : IDisplay;
+    Task NavigateToAsync<T>(params object[] args) where T : class, IPage;
 
     Task NavigateBackAsync();
-
-    Task ExitAsync();
 }

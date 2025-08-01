@@ -1,51 +1,76 @@
 namespace Clauder.Pages;
 
-using System.Diagnostics;
 using Clauder.Abstractions;
 using Clauder.Enums;
 using Clauder.Models;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
-public sealed class SessionsPage : IDisplay
+public sealed class SessionsPage : IPage, IInputHandler
 {
     private readonly ClaudeProjectInfo _project;
     private readonly INavigationService _navigationService;
+    private readonly IClaudeProcessService _claudeProcessService;
 
     private const int PageSize = 10;
     private int _currentPage;
     private int _selectedIndex;
 
-    public SessionsPage(ClaudeProjectInfo project, INavigationService navigationService)
+    public SessionsPage(ClaudeProjectInfo project, INavigationService navigationService, IClaudeProcessService claudeProcessService)
     {
         this._project = project;
         this._navigationService = navigationService;
+        this._claudeProcessService = claudeProcessService;
     }
 
     public string Title => $"[#CC785C]Sessions - {this._project.ProjectName}[/]";
 
-    public async Task DisplayAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IRenderable> RenderHeaderAsync()
     {
-        if (this._project.Sessions.Count == 0)
+        var sessionCount = this._project.Sessions.Count;
+        var totalPages = (int)Math.Ceiling((double)sessionCount / PageSize);
+
+        var pageRule = new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/] [dim]({this._currentPage + 1}/{totalPages})[/]")
         {
-            var emptyLayout = this.CreateEmptySessionsLayout();
+            Justification = Justify.Left,
+        };
 
-            await AnsiConsole.Live(emptyLayout)
-                             .StartAsync(async ctx =>
-                             {
-                                 var key = Console.ReadKey(true).Key;
+        return ValueTask.FromResult<IRenderable>(pageRule);
+    }
 
-                                 switch (key)
-                                 {
-                                     case ConsoleKey.N:
-                                         await LaunchNewSessionAsync(this._project);
-                                         break;
-                                 }
-                             });
+    public ValueTask<IRenderable> RenderBodyAsync()
+    {
+        var sortedSessions = this._project.Sessions.OrderByDescending(s => s.Timestamp).ToList();
+        var body = this.CreateSessionTable(sortedSessions);
 
-            await this.PushBackAsync();
-            return;
-        }
+        return ValueTask.FromResult<IRenderable>(body);
+    }
 
+    public ValueTask<IRenderable> RenderFooterAsync()
+    {
+        var sessionCount = this._project.Sessions.Count;
+        var totalPages = (int)Math.Ceiling((double)sessionCount / PageSize);
+        var footer = this.CreateSessionNavigationMarkup(this._currentPage, totalPages);
+
+        return ValueTask.FromResult<IRenderable>(footer);
+    }
+
+    public ValueTask InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        // Sessions are already loaded when the page is created with ClaudeProjectInfo
+        // But we can ensure proper bounds are set
+        var sessionCount = this._project.Sessions.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling((double)sessionCount / PageSize));
+
+        this._currentPage = Math.Max(0, Math.Min(this._currentPage, totalPages - 1));
+        var itemsOnCurrentPage = Math.Min(PageSize, sessionCount - this._currentPage * PageSize);
+        this._selectedIndex = Math.Max(0, Math.Min(this._selectedIndex, Math.Max(0, itemsOnCurrentPage - 1)));
+
+        return ValueTask.CompletedTask;
+    }
+
+    public async Task<bool> HandleInputAsync(ConsoleKeyInfo keyInfo, CancellationToken cancellationToken = default)
+    {
         var sortedSessions = this._project.Sessions.OrderByDescending(s => s.Timestamp).ToList();
         var sessionCount = sortedSessions.Count;
         var totalPages = (int)Math.Ceiling((double)sessionCount / PageSize);
@@ -55,101 +80,17 @@ public sealed class SessionsPage : IDisplay
         var itemsOnCurrentPage = Math.Min(PageSize, sessionCount - this._currentPage * PageSize);
         this._selectedIndex = Math.Min(this._selectedIndex, itemsOnCurrentPage - 1);
 
-        var layout = this.CreateInitialLayout();
-        var shouldExit = false;
-        var shouldLaunchSession = false;
-        var shouldLaunchNewSession = false;
-        ClaudeSessionMetadata? selectedSession = null;
+        var navigationResult = ShowSessionNavigation(keyInfo, this._currentPage, totalPages);
 
-        await AnsiConsole.Live(layout)
-                         .StartAsync(ctx =>
-                         {
-                             while (!shouldExit && !shouldLaunchSession && !shouldLaunchNewSession)
-                             {
-                                 cancellationToken.ThrowIfCancellationRequested();
-
-                                 // Update the display
-                                 ctx.UpdateTarget(this.CreateCurrentLayout(sortedSessions, totalPages));
-
-                                 var navigationResult = ShowSessionNavigation(this._currentPage, totalPages);
-                                 var handleResult = this.HandleSessionNavigationResult(navigationResult, sortedSessions, this._currentPage, this._selectedIndex);
-
-                                 if (handleResult.session != null)
-                                 {
-                                     selectedSession = handleResult.session;
-                                     shouldLaunchSession = true;
-                                 }
-                                 else if (handleResult.isNewSession)
-                                 {
-                                     shouldLaunchNewSession = true;
-                                 }
-                                 else if (navigationResult == NavigationAction.Back)
-                                 {
-                                     shouldExit = true;
-                                 }
-                             }
-
-                             return Task.CompletedTask;
-                         });
-
-        if (selectedSession != null)
+        if (navigationResult != NavigationAction.None)
         {
-            await LaunchExistingSessionAsync(selectedSession);
-        }
-        else if (shouldLaunchNewSession)
-        {
-            await LaunchNewSessionAsync(this._project);
+            await this.HandleSessionNavigationResult(navigationResult, sortedSessions);
+            return true;
         }
 
-        if (shouldExit)
-        {
-            await this.PushBackAsync();
-        }
+        return false;
     }
 
-    public async Task PushBackAsync()
-    {
-        await this._navigationService.NavigateBackAsync();
-    }
-
-    private Layout CreateInitialLayout()
-    {
-        var layout = new Layout("Root")
-            .SplitRows(
-                new Layout("Header").Size(3),
-                new Layout("Content"),
-                new Layout("Footer").Size(4)
-            );
-
-        return layout;
-    }
-
-    private Layout CreateEmptySessionsLayout()
-    {
-        var layout = this.CreateInitialLayout();
-
-        layout["Header"].Update(new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/]") { Justification = Justify.Left });
-        layout["Content"].Update(new Markup("[yellow]No sessions found for this project.[/]"));
-        layout["Footer"].Update(new Markup("[dim][cyan]N[/] New Session • [red]B[/] Back[/]"));
-
-        return layout;
-    }
-
-    private Layout CreateCurrentLayout(List<ClaudeSessionMetadata> sessions, int totalPages)
-    {
-        var layout = this.CreateInitialLayout();
-
-        var pageRule = new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/] [dim]({this._currentPage + 1}/{totalPages})[/]")
-        {
-            Justification = Justify.Left,
-        };
-
-        layout["Header"].Update(pageRule);
-        layout["Content"].Update(this.CreateSessionTable(sessions));
-        layout["Footer"].Update(this.CreateSessionNavigationMarkup(this._currentPage, totalPages));
-
-        return layout;
-    }
 
     private Table CreateSessionTable(List<ClaudeSessionMetadata> sessions)
     {
@@ -213,11 +154,9 @@ public sealed class SessionsPage : IDisplay
         return new Markup(footerContent);
     }
 
-    private static NavigationAction ShowSessionNavigation(int currentPage, int totalPages)
+    private static NavigationAction ShowSessionNavigation(ConsoleKeyInfo keyInfo, int currentPage, int totalPages)
     {
-        var key = Console.ReadKey(true).Key;
-
-        return key switch
+        return keyInfo.Key switch
         {
             ConsoleKey.UpArrow => NavigationAction.SelectUp,
             ConsoleKey.DownArrow => NavigationAction.SelectDown,
@@ -225,145 +164,66 @@ public sealed class SessionsPage : IDisplay
             ConsoleKey.RightArrow when currentPage < totalPages - 1 => NavigationAction.NextPage,
             ConsoleKey.LeftArrow when currentPage > 0 => NavigationAction.PreviousPage,
             ConsoleKey.N => NavigationAction.NewSession,
-            ConsoleKey.B => NavigationAction.Back,
-            ConsoleKey.Escape => NavigationAction.Back,
-            _ => NavigationAction.None,
+            _ => NavigationAction.None, // Let global handler handle B/Escape
         };
     }
 
-    private (ClaudeSessionMetadata? session, bool isNewSession) HandleSessionNavigationResult(
+    private async Task HandleSessionNavigationResult(
         NavigationAction action,
-        List<ClaudeSessionMetadata> sessions,
-        int currentPage,
-        int selectedIndex)
+        IReadOnlyList<ClaudeSessionMetadata> sortedSessions)
     {
-        var itemsOnPage = Math.Min(PageSize, sessions.Count - currentPage * PageSize);
+        var currentPage = this._currentPage;
+        var selectedIndex = this._selectedIndex;
+
+        var itemsOnPage = Math.Min(PageSize, sortedSessions.Count - currentPage * PageSize);
 
         switch (action)
         {
             case NavigationAction.SelectUp:
+            {
                 this._selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : itemsOnPage - 1;
                 break;
+            }
             case NavigationAction.SelectDown:
+            {
                 this._selectedIndex = selectedIndex < itemsOnPage - 1 ? selectedIndex + 1 : 0;
                 break;
+            }
             case NavigationAction.SelectItem:
+            {
                 var actualIndex = currentPage * PageSize + selectedIndex;
-                return (sessions[actualIndex], false);
+
+                await this._claudeProcessService.LaunchExistingSessionAsync(sortedSessions[actualIndex]);
+
+                break;
+            }
             case NavigationAction.NextPage:
+            {
                 this._currentPage++;
                 this._selectedIndex = Math.Clamp(this._selectedIndex, 0, itemsOnPage - 1);
                 break;
+            }
             case NavigationAction.PreviousPage:
+            {
                 this._currentPage--;
                 this._selectedIndex = Math.Clamp(this._selectedIndex, 0, itemsOnPage - 1);
                 break;
+            }
             case NavigationAction.NewSession:
-                return (null, true);
-            case NavigationAction.Back:
+            {
+                await this._claudeProcessService.LaunchNewSessionAsync(this._project);
+
                 break;
-        }
-
-        return (null, false);
-    }
-
-    private static async Task LaunchExistingSessionAsync(ClaudeSessionMetadata session)
-    {
-        if (string.IsNullOrEmpty(session.SessionId) || string.IsNullOrEmpty(session.Cwd))
-        {
-            AnsiConsole.MarkupLine("[red]Session ID or working directory is missing. Cannot launch session.[/]");
-            Console.WriteLine("Press any key to continue...");
-            Console.ReadKey(true);
-            return;
-        }
-
-        try
-        {
-            var processStartInfo = new ProcessStartInfo
-            {
-                FileName = "claude",
-                Arguments = $"-r \"{session.SessionId}\"",
-                WorkingDirectory = session.Cwd,
-                UseShellExecute = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
-                RedirectStandardInput = false,
-                CreateNoWindow = false,
-            };
-
-            Console.Clear();
-            Console.WriteLine($"Launching Claude session: {session.SessionId}");
-            Console.WriteLine($"Working directory: {session.Cwd}");
-            Console.WriteLine($"Command: claude -r \"{session.SessionId}\"");
-            Console.WriteLine();
-            Console.WriteLine("Press Ctrl+C to terminate the session...");
-            Console.WriteLine(new string('=', 50));
-
-            using var process = Process.Start(processStartInfo);
-
-            if (process == null)
-            {
-                throw new Exception("Failed to start Claude process.");
             }
-
-            await process.WaitForExitAsync();
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine($"[red]Error launching Claude session: {ex.Message}[/]");
-            Console.WriteLine("Press any key to continue...");
-            Console.ReadKey(true);
-        }
-    }
-
-    private static async Task LaunchNewSessionAsync(ClaudeProjectInfo project)
-    {
-        if (string.IsNullOrEmpty(project.ProjectPath))
-        {
-            AnsiConsole.MarkupLine("[red]Project path is missing. Cannot launch new session.[/]");
-            Console.WriteLine("Press any key to continue...");
-            Console.ReadKey(true);
-            return;
-        }
-
-        try
-        {
-            var processStartInfo = new ProcessStartInfo
+            case NavigationAction.Back:
             {
-                FileName = "claude",
-                Arguments = string.Empty,
-                WorkingDirectory = project.ProjectPath,
-                UseShellExecute = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
-                RedirectStandardInput = false,
-                CreateNoWindow = false,
-            };
+                await this._navigationService.NavigateBackAsync();
 
-            Console.Clear();
-            Console.WriteLine($"Starting new Claude session for project: {project.ProjectName}");
-            Console.WriteLine($"Working directory: {project.ProjectPath}");
-            Console.WriteLine("Command: claude");
-            Console.WriteLine();
-            Console.WriteLine("Press Ctrl+C to terminate the session...");
-            Console.WriteLine(new string('=', 50));
-
-            using var process = Process.Start(processStartInfo);
-
-            if (process == null)
-            {
-                throw new Exception("Failed to start Claude process.");
+                break;
             }
-
-            await process.WaitForExitAsync();
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine($"[red]Error launching new Claude session: {ex.Message}[/]");
-            Console.WriteLine("Press any key to continue...");
-            Console.ReadKey(true);
         }
     }
+
 
     public void Dispose()
     {
