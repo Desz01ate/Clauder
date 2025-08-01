@@ -10,6 +10,7 @@ public sealed class SessionsPage : IPage, IInputHandler
 {
     private readonly ClaudeProjectInfo _project;
     private readonly INavigationContext _navigationContext;
+    private readonly IToastContext _toastContext;
     private readonly IClaudeProcessService _claudeProcessService;
 
     private int _currentPage;
@@ -25,10 +26,15 @@ public sealed class SessionsPage : IPage, IInputHandler
         }
     }
 
-    public SessionsPage(ClaudeProjectInfo project, INavigationContext navigationContext, IClaudeProcessService claudeProcessService)
+    public SessionsPage(
+        ClaudeProjectInfo project,
+        INavigationContext navigationContext,
+        IToastContext toastContext,
+        IClaudeProcessService claudeProcessService)
     {
         this._project = project;
         this._navigationContext = navigationContext;
+        this._toastContext = toastContext;
         this._claudeProcessService = claudeProcessService;
     }
 
@@ -225,9 +231,9 @@ public sealed class SessionsPage : IPage, IInputHandler
                 var actualIndex = currentPage * PageSize + selectedIndex;
                 var selectedSession = sortedSessions[actualIndex];
 
-                // Don't launch corrupted sessions or AI summaries
-                if (selectedSession.Type is "corrupted" or "ai-summary")
+                if (selectedSession.Type is not "user")
                 {
+                    await this._toastContext.ShowWarningAsync("Unable to resume a non-user session.");
                     break;
                 }
 
