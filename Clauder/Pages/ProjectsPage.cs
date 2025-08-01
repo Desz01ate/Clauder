@@ -24,7 +24,7 @@ public sealed class ProjectsPage : IDisplay
         this._dataService = dataService;
         this._navigationService = navigationService;
 
-        this._projects = Array.Empty<ClaudeProjectSummary>();
+        this._projects = [];
         this._searchFilterSubject = new BehaviorSubject<string>(string.Empty);
 
         // Combine data service changes with search filter changes
@@ -52,99 +52,56 @@ public sealed class ProjectsPage : IDisplay
     {
         await this._dataService.LoadProjectSummariesAsync();
 
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        var layout = this.CreateInitialLayout();
+        var shouldExit = false;
+        var shouldNavigateToProject = false;
+        ClaudeProjectSummary? selectedProject = null;
 
-            AnsiConsole.WriteLine();
-
-            var rule = new Rule("[#CC785C]Claude Projects & Sessions[/]")
+        await AnsiConsole.Live(layout)
+            .StartAsync(async ctx =>
             {
-                Justification = Justify.Left,
-            };
-
-            AnsiConsole.Write(rule);
-
-            AnsiConsole.WriteLine();
-
-            if (this._projects.Count == 0)
-            {
-                var currentFilter = this._searchFilterSubject.Value;
-
-                if (string.IsNullOrWhiteSpace(currentFilter))
+                while (!shouldExit && !shouldNavigateToProject)
                 {
-                    AnsiConsole.MarkupLine("[yellow]No Claude projects found.[/]");
-                    await this.PushBackAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    return;
-                }
+                    // Update the display
+                    ctx.UpdateTarget(this.CreateCurrentLayout());
 
-                AnsiConsole.MarkupLine($"[yellow]No projects found matching '{currentFilter}'.[/]");
-                AnsiConsole.WriteLine();
-
-                ShowSearchNavigation();
-
-                var key = Console.ReadKey(true).Key;
-
-                switch (key)
-                {
-                    case ConsoleKey.S:
-                        this.PromptForSearch();
-                        break;
-                    case ConsoleKey.C:
-                        this.ClearSearch();
-                        break;
-                    case ConsoleKey.Q:
-                        await this.PushBackAsync();
-                        return;
-                }
-
-                continue;
-            }
-
-            var totalPages = (int)Math.Ceiling((double)this._projects.Count / PageSize);
-
-            // Ensure current page and selection are within bounds
-            this._currentPage = Math.Min(this._currentPage, totalPages - 1);
-            var itemsOnCurrentPage = Math.Min(PageSize, this._projects.Count - this._currentPage * PageSize);
-            this._selectedIndex = Math.Min(this._selectedIndex, itemsOnCurrentPage - 1);
-
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                AnsiConsole.Clear();
-                AnsiConsole.WriteLine();
-
-                DisplayPageWithSelection(this._projects, this._currentPage, totalPages, this._selectedIndex, this._searchFilterSubject.Value);
-
-                if (totalPages <= 1 && this._projects.Count <= PageSize)
-                {
-                    var result = this.ShowProjectNavigation(this._currentPage, totalPages);
-                    var singlePageResult = await this.HandleProjectNavigationResult(result, this._projects, this._currentPage, this._selectedIndex);
-
-                    if (singlePageResult != null || result == NavigationAction.Quit)
+                    if (this._projects.Count == 0)
                     {
-                        if (singlePageResult != null)
-                        {
-                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(singlePageResult);
-                            var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
+                        var currentFilter = this._searchFilterSubject.Value;
 
-                            await this._navigationService.NavigateToAsync(sessionsPage);
-                        }
-                        else
+                        if (string.IsNullOrWhiteSpace(currentFilter))
                         {
-                            await this.PushBackAsync();
-                            return;
+                            shouldExit = true;
+                            break;
                         }
+
+                        var key = Console.ReadKey(true).Key;
+
+                        switch (key)
+                        {
+                            case ConsoleKey.S:
+                                this.PromptForSearch();
+                                break;
+                            case ConsoleKey.C:
+                                this.ClearSearch();
+                                break;
+                            case ConsoleKey.Q:
+                                shouldExit = true;
+                                break;
+                        }
+
+                        continue;
                     }
 
-                    if (result is NavigationAction.Search or NavigationAction.Back)
-                    {
-                        break;
-                    }
-                }
-                else
-                {
+                    var totalPages = (int)Math.Ceiling((double)this._projects.Count / PageSize);
+
+                    // Ensure current page and selection are within bounds
+                    this._currentPage = Math.Min(this._currentPage, totalPages - 1);
+                    var itemsOnCurrentPage = Math.Min(PageSize, this._projects.Count - this._currentPage * PageSize);
+                    this._selectedIndex = Math.Min(this._selectedIndex, itemsOnCurrentPage - 1);
+
                     var navigationResult = this.ShowProjectNavigation(this._currentPage, totalPages);
                     var handleResult = await this.HandleProjectNavigationResult(navigationResult, this._projects, this._currentPage, this._selectedIndex);
 
@@ -152,24 +109,32 @@ public sealed class ProjectsPage : IDisplay
                     {
                         if (handleResult != null)
                         {
-                            var projectInfo = await this._dataService.LoadProjectSessionsAsync(handleResult);
-                            var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
-
-                            await this._navigationService.NavigateToAsync(sessionsPage);
+                            selectedProject = handleResult;
+                            shouldNavigateToProject = true;
                         }
                         else
                         {
-                            await this.PushBackAsync();
-                            return;
+                            shouldExit = true;
                         }
                     }
 
                     if (navigationResult is NavigationAction.Search or NavigationAction.Back)
                     {
-                        break;
+                        // Update display will happen on next iteration
+                        continue;
                     }
                 }
-            }
+            });
+
+        if (selectedProject != null)
+        {
+            var projectInfo = await this._dataService.LoadProjectSessionsAsync(selectedProject);
+            var sessionsPage = new SessionsPage(projectInfo, this._navigationService);
+            await this._navigationService.NavigateToAsync(sessionsPage);
+        }
+        else if (shouldExit)
+        {
+            await this.PushBackAsync();
         }
     }
 
@@ -178,32 +143,64 @@ public sealed class ProjectsPage : IDisplay
         await this._navigationService.NavigateBackAsync();
     }
 
-    private static void DisplayPageWithSelection(
-        IReadOnlyList<ClaudeProjectSummary> projects,
-        int currentPage,
-        int totalPages,
-        int selectedIndex,
-        string searchFilter = "")
+    private Layout CreateInitialLayout()
     {
-        var titleText = string.IsNullOrEmpty(searchFilter)
-            ? $"[#CC785C]Claude Projects & Sessions[/] [dim]({currentPage + 1}/{totalPages})[/]"
-            : $"[#CC785C]Claude Projects & Sessions[/] [dim]({currentPage + 1}/{totalPages}) - Filtered by: '{searchFilter}'[/]";
+        var layout = new Layout("Root")
+            .SplitRows(
+                new Layout("Header").Size(3),
+                new Layout("Content"),
+                new Layout("Footer").Size(3)
+            );
 
-        var pageRule = new Rule(titleText)
+        return layout;
+    }
+
+    private Layout CreateCurrentLayout()
+    {
+        var layout = this.CreateInitialLayout();
+
+        if (this._projects.Count == 0)
         {
-            Justification = Justify.Left,
-        };
+            var currentFilter = this._searchFilterSubject.Value;
+            
+            if (string.IsNullOrWhiteSpace(currentFilter))
+            {
+                layout["Header"].Update(new Rule("[#CC785C]Claude Projects & Sessions[/]") { Justification = Justify.Left });
+                layout["Content"].Update(new Markup("[yellow]No Claude projects found.[/]"));
+                layout["Footer"].Update(new Markup("[dim][red]Q[/] Quit[/]"));
+            }
+            else
+            {
+                layout["Header"].Update(new Rule("[#CC785C]Claude Projects & Sessions[/]") { Justification = Justify.Left });
+                layout["Content"].Update(new Markup($"[yellow]No projects found matching '{currentFilter}'.[/]"));
+                layout["Footer"].Update(this.CreateSearchNavigationMarkup());
+            }
+        }
+        else
+        {
+            var totalPages = (int)Math.Ceiling((double)this._projects.Count / PageSize);
+            var titleText = string.IsNullOrEmpty(this._searchFilterSubject.Value)
+                ? $"[#CC785C]Claude Projects & Sessions[/] [dim]({this._currentPage + 1}/{totalPages})[/]"
+                : $"[#CC785C]Claude Projects & Sessions[/] [dim]({this._currentPage + 1}/{totalPages}) - Filtered by: '{this._searchFilterSubject.Value}'[/]";
 
-        AnsiConsole.Write(pageRule);
+            layout["Header"].Update(new Rule(titleText) { Justification = Justify.Left });
+            layout["Content"].Update(this.CreateProjectTable());
+            layout["Footer"].Update(this.CreateNavigationMarkup(this._currentPage, totalPages));
+        }
 
-        var table = new Table();
+        return layout;
+    }
+
+    private Table CreateProjectTable()
+    {
+        var table = new Table().Expand();
         table.AddColumn("[bold]#[/]");
         table.AddColumn("[bold]Project[/]");
         table.AddColumn("[bold]Path[/]");
         table.AddColumn("[bold]Sessions[/]");
         table.AddColumn("[bold]Git Branch[/]");
 
-        var pageProjects = projects.Skip(currentPage * PageSize).Take(PageSize);
+        var pageProjects = this._projects.Skip(this._currentPage * PageSize).Take(PageSize);
 
         var i = 0;
         foreach (var project in pageProjects)
@@ -216,7 +213,7 @@ public sealed class ProjectsPage : IDisplay
 
             var relativePath = project.ProjectPath.Replace(Environment.GetEnvironmentVariable("HOME")!, "~");
 
-            var isSelected = i == selectedIndex;
+            var isSelected = i == this._selectedIndex;
             var selectionMarker = isSelected ? "[yellow]>[/]" : " ";
             var projectName = isSelected ? $"[yellow]{project.ProjectName}[/]" : $"[dim]{project.ProjectName}[/]";
 
@@ -230,14 +227,11 @@ public sealed class ProjectsPage : IDisplay
             i++;
         }
 
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[dim]Total: {projects.Count} projects, {projects.Sum(p => p.SessionCount)} sessions[/]");
+        return table;
     }
 
-    private NavigationAction ShowProjectNavigation(int currentPage, int totalPages)
+    private Markup CreateNavigationMarkup(int currentPage, int totalPages)
     {
-        AnsiConsole.WriteLine();
         var navigationItems = new[]
         {
             "[green]↑↓[/] Select",
@@ -255,8 +249,26 @@ public sealed class ProjectsPage : IDisplay
             navigationText.Add(" Next [blue]→[/]");
         navigationText.Add("[red]Q[/] Quit");
 
-        AnsiConsole.MarkupLine($"[dim]{string.Join(" • ", navigationText)}[/]");
+        var footerContent = $"[dim]{string.Join(" • ", navigationText)}[/]\n";
+        footerContent += $"[dim]Total: {this._projects.Count} projects, {this._projects.Sum(p => p.SessionCount)} sessions[/]";
 
+        return new Markup(footerContent);
+    }
+
+    private Markup CreateSearchNavigationMarkup()
+    {
+        var navigationText = new[]
+        {
+            "[yellow]S[/] Search Again",
+            "[yellow]C[/] Clear Search",
+            "[red]Q[/] Quit",
+        };
+
+        return new Markup($"[dim]{string.Join(" • ", navigationText)}[/]");
+    }
+
+    private NavigationAction ShowProjectNavigation(int currentPage, int totalPages)
+    {
         var key = Console.ReadKey(true).Key;
 
         return key switch
@@ -317,8 +329,9 @@ public sealed class ProjectsPage : IDisplay
 
     private void PromptForSearch()
     {
-        AnsiConsole.WriteLine();
-        var searchTerm = AnsiConsole.Ask<string>("[yellow]Enter search term (project name):[/]");
+        // Temporarily exit Live context for input
+        Console.Write("Enter search term (project name): ");
+        var searchTerm = Console.ReadLine() ?? string.Empty;
         this._searchFilterSubject.OnNext(searchTerm.Trim());
     }
 
@@ -333,17 +346,6 @@ public sealed class ProjectsPage : IDisplay
         this._selectedIndex = 0;
     }
 
-    private static void ShowSearchNavigation()
-    {
-        var navigationText = new[]
-        {
-            "[yellow]S[/] Search Again",
-            "[yellow]C[/] Clear Search",
-            "[red]Q[/] Quit",
-        };
-
-        AnsiConsole.MarkupLine($"[dim]{string.Join(" • ", navigationText)}[/]");
-    }
 
     public static void DisplayErrorMessage(string message)
     {

@@ -25,34 +25,24 @@ public sealed class SessionsPage : IDisplay
 
     public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
-        AnsiConsole.WriteLine();
-        
-        var rule = new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/]")
-        {
-            Justification = Justify.Left,
-        };
-
-        AnsiConsole.Write(rule);
-
-        AnsiConsole.WriteLine();
-
         if (this._project.Sessions.Count == 0)
         {
-            AnsiConsole.MarkupLine("[yellow]No sessions found for this project.[/]");
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[dim][cyan]N[/] New Session • [red]B[/] Back[/]");
-            var key = Console.ReadKey(true).Key;
+            var emptyLayout = this.CreateEmptySessionsLayout();
 
-            switch (key)
-            {
-                case ConsoleKey.N:
-                    await LaunchNewSessionAsync(this._project);
-                    break;
-                default:
-                    await this.PushBackAsync();
-                    return;
-            }
+            await AnsiConsole.Live(emptyLayout)
+                             .StartAsync(async ctx =>
+                             {
+                                 var key = Console.ReadKey(true).Key;
 
+                                 switch (key)
+                                 {
+                                     case ConsoleKey.N:
+                                         await LaunchNewSessionAsync(this._project);
+                                         break;
+                                 }
+                             });
+
+            await this.PushBackAsync();
             return;
         }
 
@@ -65,53 +55,55 @@ public sealed class SessionsPage : IDisplay
         var itemsOnCurrentPage = Math.Min(PageSize, sessionCount - this._currentPage * PageSize);
         this._selectedIndex = Math.Min(this._selectedIndex, itemsOnCurrentPage - 1);
 
-        while (true)
+        var layout = this.CreateInitialLayout();
+        var shouldExit = false;
+        var shouldLaunchSession = false;
+        var shouldLaunchNewSession = false;
+        ClaudeSessionMetadata? selectedSession = null;
+
+        await AnsiConsole.Live(layout)
+                         .StartAsync(ctx =>
+                         {
+                             while (!shouldExit && !shouldLaunchSession && !shouldLaunchNewSession)
+                             {
+                                 cancellationToken.ThrowIfCancellationRequested();
+
+                                 // Update the display
+                                 ctx.UpdateTarget(this.CreateCurrentLayout(sortedSessions, totalPages));
+
+                                 var navigationResult = ShowSessionNavigation(this._currentPage, totalPages);
+                                 var handleResult = this.HandleSessionNavigationResult(navigationResult, sortedSessions, this._currentPage, this._selectedIndex);
+
+                                 if (handleResult.session != null)
+                                 {
+                                     selectedSession = handleResult.session;
+                                     shouldLaunchSession = true;
+                                 }
+                                 else if (handleResult.isNewSession)
+                                 {
+                                     shouldLaunchNewSession = true;
+                                 }
+                                 else if (navigationResult == NavigationAction.Back)
+                                 {
+                                     shouldExit = true;
+                                 }
+                             }
+
+                             return Task.CompletedTask;
+                         });
+
+        if (selectedSession != null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            await LaunchExistingSessionAsync(selectedSession);
+        }
+        else if (shouldLaunchNewSession)
+        {
+            await LaunchNewSessionAsync(this._project);
+        }
 
-            AnsiConsole.Clear();
-            AnsiConsole.WriteLine();
-
-            DisplaySessionPageWithSelection(this._project, sortedSessions, this._currentPage, totalPages, this._selectedIndex);
-
-            if (totalPages <= 1 && sessionCount <= PageSize)
-            {
-                var result = ShowSessionNavigation(this._currentPage, totalPages);
-                var singlePageResult = this.HandleSessionNavigationResult(result, sortedSessions, this._currentPage, this._selectedIndex);
-
-                if (singlePageResult.session != null)
-                {
-                    await LaunchExistingSessionAsync(singlePageResult.session);
-                }
-                else if (singlePageResult.isNewSession)
-                {
-                    await LaunchNewSessionAsync(this._project);
-                }
-                else if (result == NavigationAction.Back)
-                {
-                    await this.PushBackAsync();
-                    return;
-                }
-            }
-            else
-            {
-                var navigationResult = ShowSessionNavigation(this._currentPage, totalPages);
-                var handleResult = this.HandleSessionNavigationResult(navigationResult, sortedSessions, this._currentPage, this._selectedIndex);
-
-                if (handleResult.session != null)
-                {
-                    await LaunchExistingSessionAsync(handleResult.session);
-                }
-                else if (handleResult.isNewSession)
-                {
-                    await LaunchNewSessionAsync(this._project);
-                }
-                else if (navigationResult == NavigationAction.Back)
-                {
-                    await this.PushBackAsync();
-                    return;
-                }
-            }
+        if (shouldExit)
+        {
+            await this.PushBackAsync();
         }
     }
 
@@ -120,16 +112,48 @@ public sealed class SessionsPage : IDisplay
         await this._navigationService.NavigateBackAsync();
     }
 
-    private static void DisplaySessionPageWithSelection(ClaudeProjectInfo project, List<ClaudeSessionMetadata> sessions, int currentPage, int totalPages, int selectedIndex)
+    private Layout CreateInitialLayout()
     {
-        var pageRule = new Rule($"[#CC785C]Sessions for {project.ProjectName}[/] [dim]({currentPage + 1}/{totalPages})[/]")
+        var layout = new Layout("Root")
+            .SplitRows(
+                new Layout("Header").Size(3),
+                new Layout("Content"),
+                new Layout("Footer").Size(4)
+            );
+
+        return layout;
+    }
+
+    private Layout CreateEmptySessionsLayout()
+    {
+        var layout = this.CreateInitialLayout();
+
+        layout["Header"].Update(new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/]") { Justification = Justify.Left });
+        layout["Content"].Update(new Markup("[yellow]No sessions found for this project.[/]"));
+        layout["Footer"].Update(new Markup("[dim][cyan]N[/] New Session • [red]B[/] Back[/]"));
+
+        return layout;
+    }
+
+    private Layout CreateCurrentLayout(List<ClaudeSessionMetadata> sessions, int totalPages)
+    {
+        var layout = this.CreateInitialLayout();
+
+        var pageRule = new Rule($"[#CC785C]Sessions for {this._project.ProjectName}[/] [dim]({this._currentPage + 1}/{totalPages})[/]")
         {
             Justification = Justify.Left,
         };
 
-        AnsiConsole.Write(pageRule);
+        layout["Header"].Update(pageRule);
+        layout["Content"].Update(this.CreateSessionTable(sessions));
+        layout["Footer"].Update(this.CreateSessionNavigationMarkup(this._currentPage, totalPages));
 
-        var table = new Table();
+        return layout;
+    }
+
+    private Table CreateSessionTable(List<ClaudeSessionMetadata> sessions)
+    {
+        var table = new Table().Expand();
         table.AddColumn("[bold]#[/]");
         table.AddColumn("[bold]Session ID[/]");
         table.AddColumn("[bold]Timestamp[/]");
@@ -137,9 +161,10 @@ public sealed class SessionsPage : IDisplay
         table.AddColumn("[bold]Type[/]");
         table.AddColumn("[bold]Message Preview[/]");
 
-        var pageSessions = sessions.Skip(currentPage * PageSize).Take(PageSize);
+        var pageSessions = sessions.Skip(this._currentPage * PageSize).Take(PageSize);
 
         var i = 0;
+
         foreach (var session in pageSessions)
         {
             var sessionIdShort = session.SessionId?.Length > 8 ? session.SessionId[..8] + "..." : session.SessionId ?? "N/A";
@@ -147,7 +172,7 @@ public sealed class SessionsPage : IDisplay
                 ? session.Message.Content[..50] + "..."
                 : session.Message?.Content ?? "N/A";
 
-            var isSelected = i == selectedIndex;
+            var isSelected = i == this._selectedIndex;
             var selectionMarker = isSelected ? "[yellow]>[/]" : " ";
             var sessionId = isSelected ? $"[yellow]{sessionIdShort}[/]" : $"[dim]{sessionIdShort}[/]";
 
@@ -162,15 +187,11 @@ public sealed class SessionsPage : IDisplay
             i++;
         }
 
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[dim]Project: {project.ProjectPath}[/]");
-        AnsiConsole.MarkupLine($"[dim]Total sessions: {project.Sessions.Count}[/]");
+        return table;
     }
 
-    private static NavigationAction ShowSessionNavigation(int currentPage, int totalPages)
+    private Markup CreateSessionNavigationMarkup(int currentPage, int totalPages)
     {
-        AnsiConsole.WriteLine();
         var navigationItems = new[]
         {
             "[green]↑↓[/] Select",
@@ -185,8 +206,15 @@ public sealed class SessionsPage : IDisplay
             navigationText.Add(" Next [blue]→[/]");
         navigationText.Add("[red]B[/] Back");
 
-        AnsiConsole.MarkupLine($"[dim]{string.Join(" • ", navigationText)}[/]");
+        var footerContent = $"[dim]{string.Join(" • ", navigationText)}[/]\n";
+        footerContent += $"[dim]Project: {this._project.ProjectPath}[/]\n";
+        footerContent += $"[dim]Total sessions: {this._project.Sessions.Count}[/]";
 
+        return new Markup(footerContent);
+    }
+
+    private static NavigationAction ShowSessionNavigation(int currentPage, int totalPages)
+    {
         var key = Console.ReadKey(true).Key;
 
         return key switch

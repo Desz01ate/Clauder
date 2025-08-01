@@ -14,7 +14,7 @@ public class ClaudeDataService : IDisposable
     private readonly static string ClaudeDirectory = Path.Combine(HomeDirectory, ".claude");
     private readonly static string ProjectDir = Path.Combine(ClaudeDirectory, "projects");
 
-    private IReadOnlyList<ClaudeProjectSummary> projectSummaries = Array.Empty<ClaudeProjectSummary>();
+    private IReadOnlyList<ClaudeProjectSummary> projectSummaries = [];
     private readonly Dictionary<string, ClaudeProjectInfo> _projectCache = new();
     private readonly FileSystemWatcher? _fileWatcher;
     private readonly Subject<FileSystemEventArgs> _fileChangedSubject;

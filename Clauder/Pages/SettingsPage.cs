@@ -16,27 +16,27 @@ public sealed class SettingsPage : IDisplay
 
     public async Task DisplayAsync(CancellationToken cancellationToken = default)
     {
-        AnsiConsole.Clear();
-        AnsiConsole.WriteLine();
+        var layout = new Layout("Root")
+            .SplitRows(
+                new Layout("Header").Size(3),
+                new Layout("Content"),
+                new Layout("Footer").Size(2)
+            );
 
-        var rule = new Rule("[#CC785C]Settings[/]")
-        {
-            Justification = Justify.Left,
-        };
+        layout["Header"].Update(new Rule("[#CC785C]Settings[/]") { Justification = Justify.Left });
+        layout["Content"].Update(new Markup("[yellow]Settings page - coming soon![/]"));
+        layout["Footer"].Update(new Markup("[dim][red]B[/] Back[/]"));
 
-        AnsiConsole.Write(rule);
-        AnsiConsole.WriteLine();
+        await AnsiConsole.Live(layout)
+            .StartAsync(async ctx =>
+            {
+                var key = Console.ReadKey(true).Key;
 
-        AnsiConsole.MarkupLine("[yellow]Settings page - coming soon![/]");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim][red]B[/] Back[/]");
-
-        var key = Console.ReadKey(true).Key;
-
-        if (key == ConsoleKey.B || key == ConsoleKey.Escape)
-        {
-            await this.PushBackAsync();
-        }
+                if (key == ConsoleKey.B || key == ConsoleKey.Escape)
+                {
+                    await this.PushBackAsync();
+                }
+            });
     }
 
     public async Task PushBackAsync()
