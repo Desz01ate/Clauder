@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Clauder.Services;
 
-using Pages;
+using System.Reflection;
 
 public static class ServiceConfiguration
 {
@@ -41,7 +41,7 @@ public static class ServiceConfiguration
             sp.GetRequiredService<Channel<ToastCommand>>().Reader);
 
         services.AddSingleton<IToastContext, ToastContext>();
-        
+
         // Register new architecture components
         services.AddSingleton<IRenderEngine, ConsoleRenderEngine>();
         services.AddSingleton<IPageManager, PageManager>();
@@ -49,14 +49,18 @@ public static class ServiceConfiguration
         services.AddSingleton<IInputProcessor, InputProcessor>();
         services.AddSingleton<ILayoutManager, LayoutManager>();
         services.AddSingleton<IApplicationHost, ApplicationHost>();
-        
-        // Keep RenderingHost for backward compatibility during transition
-        services.AddSingleton<RenderingHost>();
 
         // Register pages
-        services.AddTransient<ProjectsPage>();
-        services.AddTransient<SessionsPage>();
-        services.AddTransient<SettingsPage>();
+        var pageTypes =
+            Assembly.GetCallingAssembly()
+                    .GetExportedTypes()
+                    .Where(
+                        static t => t.IsAssignableTo(typeof(IPage)) && t is { IsClass: true, IsAbstract: false });
+
+        foreach (var pageType in pageTypes)
+        {
+            services.AddTransient(pageType);
+        }
 
         return services;
     }
