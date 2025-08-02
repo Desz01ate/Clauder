@@ -2,7 +2,6 @@ namespace Clauder.Pages;
 
 using System.Diagnostics;
 using Clauder.Abstractions;
-using Clauder.Services;
 using Models;
 using Spectre.Console;
 using Spectre.Console.Rendering;

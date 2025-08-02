@@ -23,9 +23,13 @@ public sealed class RenderingHost : IDisposable
 
     #region Toast handling
 
-    private ToastInfo? _toast;
+    private readonly Queue<ToastInfo> _toastQueue = new();
+    private ToastInfo? _currentToast;
+    private CancellationTokenSource? _currentToastCancellation;
     private LiveDisplayContext? _liveContext;
+
     private readonly object _renderLock = new();
+    private readonly object _toastLock = new();
 
     #endregion
 
@@ -34,7 +38,8 @@ public sealed class RenderingHost : IDisposable
     private static Layout Layout =
         new Layout("Root")
             .SplitRows(
-                new Layout("Header").Size(3),
+                new Layout("Header")
+                    .Size(4),
                 new Layout("Content"),
                 new Layout("Footer")
                     .Size(4)
@@ -188,7 +193,15 @@ public sealed class RenderingHost : IDisposable
     {
         var header =
             await this.SafeRenderFragmentAsync(
-                page.RenderHeaderAsync,
+                async () =>
+                {
+                    var content = await page.RenderHeaderAsync();
+                    var padder = new Padder(
+                        content,
+                        new Padding(0, 1, 0, 0));
+
+                    return padder;
+                },
                 "Header",
                 static () => new Markup("[red]Header rendering failed[/]"));
 
@@ -224,7 +237,9 @@ public sealed class RenderingHost : IDisposable
     {
         try
         {
-            return await renderFunc();
+            var content = await renderFunc();
+
+            return content;
         }
         catch (Exception ex)
         {
@@ -246,63 +261,95 @@ public sealed class RenderingHost : IDisposable
 
     private async Task HandleToastAsync(CancellationTokenSource cts)
     {
-        // Check for toast messages
         while (!cts.IsCancellationRequested)
         {
-            if (this._toast.HasValue)
+            ToastInfo? nextToast = null;
+
+            // Check if we need to start a new toast
+            lock (this._toastLock)
             {
-                var toastMessage = this._toast.Value.Message;
-                var toastTime = this._toast.Value.Time;
-                var toastType = this._toast.Value.Type;
-                var toastDuration = this._toast.Value.Duration;
-
-                var timeSinceToast = DateTime.Now - toastTime;
-
-                if (timeSinceToast <= toastDuration)
+                if (this._currentToast == null && this._toastQueue.Count > 0)
                 {
-                    var toastText = toastMessage.Length > 55
-                        ? toastMessage[..52] + "..."
-                        : toastMessage;
-
-                    var (icon, color) = toastType switch
-                    {
-                        ToastType.Success => ("✓", "green"),
-                        ToastType.Warning => ("⚠", "yellow"),
-                        ToastType.Error => ("✗", "red"),
-                        ToastType.Info or _ => ("ℹ", "blue"),
-                    };
-
-                    var panel = new Panel($"[{color}]{icon} {toastText}[/]")
-                        .RoundedBorder()
-                        .BorderColor(Color.FromInt32(toastType switch
-                        {
-                            ToastType.Success => 28, // Green
-                            ToastType.Warning => 178, // Yellow/Orange
-                            ToastType.Error => 196, // Red
-                            ToastType.Info or _ => 33, // Blue
-                        }))
-                        .Padding(0, 0);
-                    
-                    Layout["FooterError"].Update(panel);
-                    
-                    // Trigger independent refresh to show toast immediately
-                    this.RefreshRender();
-
-                    await Task.Delay(toastDuration);
-
-                    await this._toastContext.ClearAsync();
+                    nextToast = this._toastQueue.Dequeue();
+                    this._currentToast = nextToast;
                 }
             }
-            else
+
+            // Start displaying the new toast
+            if (nextToast.HasValue)
             {
-                Layout["FooterError"].Update(EmptyErrorDisplay);
-                
-                // Trigger independent refresh to clear toast immediately
-                this.RefreshRender();
+                this._currentToastCancellation?.Cancel();
+                this._currentToastCancellation = new CancellationTokenSource();
+
+                var toastToken = this._currentToastCancellation.Token;
+
+                // Display the toast
+                this.DisplayToast(nextToast.Value);
+
+                try
+                {
+                    // Wait for the duration or cancellation
+                    await Task.Delay(nextToast.Value.Duration, toastToken);
+
+                    // Duration completed, clear this toast
+                    lock (this._toastLock)
+                    {
+                        if (this._currentToast?.Time == nextToast.Value.Time)
+                        {
+                            this._currentToast = null;
+                            this.ClearToastDisplay();
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Toast was cancelled (new toast arrived or system shutdown)
+                    // Don't clear display here as new toast might be showing
+                }
+            }
+            else if (this._currentToast == null)
+            {
+                // No current toast, ensure display is clear
+                this.ClearToastDisplay();
             }
 
-            await Task.Delay(10);
+            await Task.Delay(50, cts.Token);
         }
+    }
+
+    private void DisplayToast(ToastInfo toast)
+    {
+        var toastText = toast.Message.Length > 55
+            ? toast.Message[..52] + "..."
+            : toast.Message;
+
+        var (icon, color) = toast.Type switch
+        {
+            ToastType.Success => ("✓", "green"),
+            ToastType.Warning => ("⚠", "yellow"),
+            ToastType.Error => ("✗", "red"),
+            ToastType.Info or _ => ("ℹ", "blue"),
+        };
+
+        var panel = new Panel($"[{color}]{icon} {toastText}[/]")
+                    .RoundedBorder()
+                    .BorderColor(Color.FromInt32(toast.Type switch
+                    {
+                        ToastType.Success => 28, // Green
+                        ToastType.Warning => 178, // Yellow/Orange
+                        ToastType.Error => 196, // Red
+                        ToastType.Info or _ => 33, // Blue
+                    }))
+                    .Padding(0, 0);
+
+        Layout["FooterError"].Update(panel);
+        this.RefreshRender();
+    }
+
+    private void ClearToastDisplay()
+    {
+        Layout["FooterError"].Update(EmptyErrorDisplay);
+        this.RefreshRender();
     }
 
     private async Task<bool> HandleGlobalInputAsync(ConsoleKeyInfo keyInfo)
@@ -360,22 +407,29 @@ public sealed class RenderingHost : IDisposable
             switch (command)
             {
                 case ShowToastCommand showCommand:
-                    this._toast =
-                        new ToastInfo(
-                            showCommand.Message,
-                            DateTime.Now,
-                            showCommand.Type,
-                            showCommand.Duration);
-                    
-                    // Trigger immediate refresh when a new toast is shown
-                    this.RefreshRender();
+                    var toastInfo = new ToastInfo(
+                        showCommand.Message,
+                        DateTime.Now,
+                        showCommand.Type,
+                        showCommand.Duration);
+
+                    lock (this._toastLock)
+                    {
+                        this._toastQueue.Enqueue(toastInfo);
+                    }
+
                     break;
 
                 case ClearToastCommand:
-                    this._toast = null;
-                    
-                    // Trigger immediate refresh when toast is cleared
-                    this.RefreshRender();
+                    lock (this._toastLock)
+                    {
+                        // Clear the queue and current toast
+                        this._toastQueue.Clear();
+                        this._currentToast = null;
+                    }
+
+                    // Cancel current toast display
+                    this._currentToastCancellation?.Cancel();
                     break;
 
                 default:
@@ -423,6 +477,9 @@ public sealed class RenderingHost : IDisposable
     {
         this._currentPageCancellation?.Cancel();
         this._currentPageCancellation?.Dispose();
+
+        this._currentToastCancellation?.Cancel();
+        this._currentToastCancellation?.Dispose();
 
         while (this._pageStack.Count > 0)
         {

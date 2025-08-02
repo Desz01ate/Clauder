@@ -1,5 +1,4 @@
 using Clauder.Abstractions;
-using Clauder.Pages;
 using Clauder.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
