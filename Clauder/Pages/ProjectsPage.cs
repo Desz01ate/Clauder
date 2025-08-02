@@ -13,11 +13,14 @@ public sealed class ProjectsPage : IPage, IInputHandler
 {
     private readonly ClaudeDataService _dataService;
     private readonly INavigationContext _navigationContext;
+    private readonly IInputProcessor _inputProcessor;
 
     private IReadOnlyList<ClaudeProjectSummary> _projects;
     private int _currentPage;
     private int _selectedIndex;
     private readonly BehaviorSubject<string> _searchFilterSubject;
+    private bool _isSearchMode;
+    private string _searchInput;
 
     private static int PageSize
     {
@@ -29,13 +32,16 @@ public sealed class ProjectsPage : IPage, IInputHandler
         }
     }
 
-    public ProjectsPage(ClaudeDataService dataService, INavigationContext navigationContext)
+    public ProjectsPage(ClaudeDataService dataService, INavigationContext navigationContext, IInputProcessor inputProcessor)
     {
         this._dataService = dataService;
         this._navigationContext = navigationContext;
+        this._inputProcessor = inputProcessor;
 
         this._projects = [];
         this._searchFilterSubject = new BehaviorSubject<string>(string.Empty);
+        this._isSearchMode = false;
+        this._searchInput = string.Empty;
 
         // Combine data service changes with search filter changes
         var filteredProjects =
@@ -55,6 +61,9 @@ public sealed class ProjectsPage : IPage, IInputHandler
 
         // Initialize with current projects
         this._projects = dataService.ProjectSummaries;
+
+        // Register a global handler for search mode that takes priority
+        this._inputProcessor.RegisterGlobalHandlerAsync(this.HandleSearchModeGlobally);
     }
 
     public string Title => "[#CC785C]Claude Projects[/]";
@@ -62,9 +71,7 @@ public sealed class ProjectsPage : IPage, IInputHandler
     public ValueTask<IRenderable> RenderHeaderAsync()
     {
         var totalPages = (int)Math.Ceiling((double)this._projects.Count / PageSize);
-        var titleText = string.IsNullOrWhiteSpace(this._searchFilterSubject.Value)
-            ? $"[#CC785C]Claude Projects & Sessions[/] [dim]({this._currentPage + 1}/{totalPages})[/]"
-            : $"[#CC785C]Claude Projects & Sessions[/] [dim]({this._currentPage + 1}/{totalPages}) - Filtered by: '{this._searchFilterSubject.Value}'[/]";
+        var titleText = $"[#CC785C]Claude Projects & Sessions[/] [dim]({this._currentPage + 1}/{totalPages})[/]";
 
         var header = new Rule(titleText) { Justification = Justify.Left };
 
@@ -113,6 +120,12 @@ public sealed class ProjectsPage : IPage, IInputHandler
 
     public async Task<bool> HandleInputAsync(ConsoleKeyInfo keyInfo, CancellationToken cancellationToken = default)
     {
+        // Handle search mode input first
+        if (this._isSearchMode)
+        {
+            return this.HandleSearchInput(keyInfo);
+        }
+
         var totalPages = (int)Math.Ceiling((double)this._projects.Count / PageSize);
 
         // Ensure current page and selection are within bounds
@@ -140,6 +153,38 @@ public sealed class ProjectsPage : IPage, IInputHandler
         }
 
         return false;
+    }
+
+    private bool HandleSearchInput(ConsoleKeyInfo keyInfo)
+    {
+        switch (keyInfo.Key)
+        {
+            case ConsoleKey.Enter:
+                this.ApplySearch();
+                this.ResetPagination();
+                return true;
+
+            case ConsoleKey.Escape:
+                this.CancelSearch();
+                return true;
+
+            case ConsoleKey.Backspace:
+                if (this._searchInput.Length > 0)
+                {
+                    this._searchInput = this._searchInput[..^1];
+                }
+
+                return true;
+
+            default:
+                // Add printable characters to search input
+                if (!char.IsControl(keyInfo.KeyChar))
+                {
+                    this._searchInput += keyInfo.KeyChar;
+                }
+
+                return true;
+        }
     }
 
 
@@ -193,7 +238,9 @@ public sealed class ProjectsPage : IPage, IInputHandler
         };
         var navigationText = new List<string>(navigationItems);
 
-        if (!string.IsNullOrWhiteSpace(this._searchFilterSubject.Value))
+        var currentFilter = this._searchFilterSubject.Value;
+
+        if (!string.IsNullOrWhiteSpace(currentFilter))
         {
             navigationText.Add("[yellow]C[/] Clear Search");
         }
@@ -212,12 +259,23 @@ public sealed class ProjectsPage : IPage, IInputHandler
         }
 
         var footerContent = $"[dim]{string.Join(" • ", navigationText)}[/]\n";
+
+        // Show search input when in search mode, otherwise show applied filter
+        if (this._isSearchMode)
+        {
+            footerContent += $"[dim]Search: [/][yellow]{this._searchInput}[/][dim]|[/]\n";
+        }
+        else if (!string.IsNullOrWhiteSpace(currentFilter))
+        {
+            footerContent += $"[dim]Filtered by: '[/][yellow]{currentFilter}[/][dim]'[/]\n";
+        }
+
         footerContent += $"[dim]Total: {this._projects.Count} projects, {this._projects.Sum(p => p.SessionCount)} sessions[/]";
 
         return new Markup(footerContent);
     }
 
-    private static Markup CreateSearchNavigationMarkup()
+    private Markup CreateSearchNavigationMarkup()
     {
         var navigationText = new[]
         {
@@ -226,7 +284,24 @@ public sealed class ProjectsPage : IPage, IInputHandler
             "[red]B[/] Quit",
         };
 
-        return new Markup($"[dim]{string.Join(" • ", navigationText)}[/]");
+        var footerContent = $"[dim]{string.Join(" • ", navigationText)}[/]";
+
+        // Show search input when in search mode, otherwise show applied filter
+        if (this._isSearchMode)
+        {
+            footerContent += $"\n[dim]Search: [/][yellow]{this._searchInput}[/][dim]|[/]";
+        }
+        else
+        {
+            var currentFilter = this._searchFilterSubject.Value;
+
+            if (!string.IsNullOrWhiteSpace(currentFilter))
+            {
+                footerContent += $"\n[dim]Filtered by: '[/][yellow]{currentFilter}[/][dim]'[/]";
+            }
+        }
+
+        return new Markup(footerContent);
     }
 
     private async Task HandleProjectNavigationResult(NavigationAction action)
@@ -270,8 +345,7 @@ public sealed class ProjectsPage : IPage, IInputHandler
             }
             case NavigationAction.Search:
             {
-                this.PromptForSearch();
-                this.ResetPagination();
+                this.StartSearchMode();
                 break;
             }
             case NavigationAction.Settings:
@@ -294,12 +368,28 @@ public sealed class ProjectsPage : IPage, IInputHandler
         }
     }
 
-    private void PromptForSearch()
+    private void StartSearchMode()
     {
-        // Temporarily exit Live context for input
-        Console.Write("Enter search term (project name): ");
-        var searchTerm = Console.ReadLine() ?? string.Empty;
-        this._searchFilterSubject.OnNext(searchTerm.Trim());
+        this._isSearchMode = true;
+        this._searchInput = this._searchFilterSubject.Value; // Start with current filter
+    }
+
+    private void ApplySearch()
+    {
+        this._isSearchMode = false;
+        var trimmedSearchTerm = this._searchInput.Trim();
+
+        // Only update if the search term has actually changed
+        if (trimmedSearchTerm != this._searchFilterSubject.Value)
+        {
+            this._searchFilterSubject.OnNext(trimmedSearchTerm);
+        }
+    }
+
+    private void CancelSearch()
+    {
+        this._isSearchMode = false;
+        this._searchInput = string.Empty;
     }
 
     private void ClearSearch()
@@ -313,8 +403,22 @@ public sealed class ProjectsPage : IPage, IInputHandler
         this._selectedIndex = 0;
     }
 
+    private Task<bool> HandleSearchModeGlobally(ConsoleKeyInfo keyInfo)
+    {
+        if (this._isSearchMode)
+        {
+            this.HandleSearchInput(keyInfo);
+
+            return Task.FromResult(true);
+        }
+
+        return Task.FromResult(false);
+    }
+
     public void Dispose()
     {
+        this._inputProcessor.UnregisterGlobalHandlerAsync(this.HandleSearchModeGlobally);
+
         this._searchFilterSubject.Dispose();
     }
 }
