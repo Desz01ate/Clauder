@@ -2,7 +2,6 @@ using Clauder.Abstractions;
 using Clauder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
