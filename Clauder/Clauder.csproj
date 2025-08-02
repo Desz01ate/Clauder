@@ -9,10 +9,10 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>clauder</ToolCommandName>
         <PackageId>Clauder</PackageId>
-        <Version>1.1.1</Version>
+        <Version>1.1.2</Version>
         <Authors>Desz01ate</Authors>
         <Description>A project and session manager for Claude Code.</Description>
-        <PackageReleaseNotes>More resilient UI update.</PackageReleaseNotes>
+        <PackageReleaseNotes>A major internal UI rendering overhaul.</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
 
