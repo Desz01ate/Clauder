@@ -2,7 +2,7 @@ namespace Clauder.Models;
 
 using System.Text.Json;
 
-public class ClaudeProjectSummary
+public sealed class ClaudeProjectSummary
 {
     public required string ProjectName { get; init; }
 
@@ -15,6 +15,8 @@ public class ClaudeProjectSummary
     public DateTime? LastSessionTime { get; init; }
 
     public string? LastGitBranch { get; init; }
+
+    public string[] SessionFiles { get; init; }
 
     public static ClaudeProjectSummary FromDirectory(string projectDirectory)
     {
@@ -29,13 +31,16 @@ public class ClaudeProjectSummary
 
         if (sessionFiles.Length > 0)
         {
-            var mostRecentFile = sessionFiles
-                                 .Select(f => new { File = f, Info = new FileInfo(f) })
-                                 .MaxBy(x => x.Info.LastWriteTime)!;
+            var buffer =
+                sessionFiles
+                    .Select(f => new { File = f, Info = new FileInfo(f) })
+                    .ToArray();
+            var mostRecentFile = buffer.MaxBy(x => x.Info.LastWriteTime)!;
+            var largestFile = buffer.MaxBy(x => x.Info.Length)!;
 
             lastSessionTime = mostRecentFile.Info.LastWriteTime;
 
-            var metadata = GetMetadata(mostRecentFile.File);
+            var metadata = GetMetadata(largestFile.File);
 
             lastGitBranch = metadata?.GitBranch;
 
@@ -56,11 +61,12 @@ public class ClaudeProjectSummary
         return new ClaudeProjectSummary
         {
             ProjectName = projectName!,
-            ProjectPath = projectPath!,
+            ProjectPath = projectPath,
             ProjectDirectoryName = directoryName,
             SessionCount = sessionCount,
             LastSessionTime = lastSessionTime,
             LastGitBranch = lastGitBranch,
+            SessionFiles = sessionFiles,
         };
     }
 

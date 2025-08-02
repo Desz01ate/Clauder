@@ -3,14 +3,14 @@ using FluentAssertions;
 
 namespace Clauder.Tests.Models;
 
-public class ClaudeProjectInfoTests
+public class ClaudeProjectWithSessionsTests
 {
     [Fact]
     public void Constructor_WithEmptySessionList_ShouldCreateValidInstance()
     {
         var sessions = new List<ClaudeSessionMetadata>();
 
-        var projectInfo = new ClaudeProjectInfo(sessions)
+        var projectInfo = new ClaudeProjectWithSessions(sessions)
         {
             ProjectName = "TestProject",
             ProjectPath = "/path/to/project"
@@ -32,7 +32,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session3", "/project/path")
         };
 
-        var projectInfo = new ClaudeProjectInfo(sessions)
+        var projectInfo = new ClaudeProjectWithSessions(sessions)
         {
             ProjectName = "TestProject",
             ProjectPath = "/project/path"
@@ -52,7 +52,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session1", "/project/path")
         };
 
-        var projectInfo = new ClaudeProjectInfo(sessions)
+        var projectInfo = new ClaudeProjectWithSessions(sessions)
         {
             ProjectName = "TestProject",
             ProjectPath = "/project/path"
@@ -71,7 +71,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session3", "/path/to/my/project")
         };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.Should().NotBeNull();
         projectInfo.ProjectPath.Should().Be("/path/to/my/project");
@@ -87,7 +87,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session1", "/simple")
         };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.ProjectName.Should().Be("simple");
         projectInfo.ProjectPath.Should().Be("/simple");
@@ -101,7 +101,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session1", "/home/user/projects/my-awesome-project")
         };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.ProjectName.Should().Be("my-awesome-project");
         projectInfo.ProjectPath.Should().Be("/home/user/projects/my-awesome-project");
@@ -115,7 +115,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session1", "/path/to/project/")
         };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.ProjectName.Should().Be("");
         projectInfo.ProjectPath.Should().Be("/path/to/project/");
@@ -135,7 +135,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("session1", @"C:\Users\User\Projects\MyProject")
         };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.ProjectName.Should().Be("MyProject");
         projectInfo.ProjectPath.Should().Be(@"C:\Users\User\Projects\MyProject");
@@ -149,7 +149,7 @@ public class ClaudeProjectInfoTests
             CreateTestSession("dummy", "/empty")
         };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.Should().NotBeNull();
         projectInfo.Sessions.Should().HaveCount(1);
@@ -166,7 +166,7 @@ public class ClaudeProjectInfoTests
 
         var sessions = new List<ClaudeSessionMetadata> { session1, session2, session3 };
 
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         projectInfo.Sessions.Should().ContainInOrder(session1, session2, session3);
     }

@@ -1,4 +1,4 @@
-namespace Clauder.Models;
+namespace Clauder.Commands;
 
 public abstract record NavigationCommand;
 

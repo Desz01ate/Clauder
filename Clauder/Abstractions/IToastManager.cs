@@ -1,6 +1,7 @@
 namespace Clauder.Abstractions;
 
 using Clauder.Models;
+using Commands;
 using Spectre.Console.Rendering;
 
 public interface IToastManager : IDisposable

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Clauder.Services;
 
 using System.Reflection;
+using Commands;
 
 public static class ServiceConfiguration
 {
