@@ -1,10 +1,10 @@
 namespace Clauder.Models;
 
-public class ClaudeProjectInfo
+public class ClaudeProjectWithSessions
 {
     private readonly IReadOnlyList<ClaudeSessionMetadata> _sessions;
 
-    public ClaudeProjectInfo(IEnumerable<ClaudeSessionMetadata> sessions)
+    public ClaudeProjectWithSessions(IEnumerable<ClaudeSessionMetadata> sessions)
     {
         this._sessions = sessions.ToList();
     }
@@ -15,12 +15,12 @@ public class ClaudeProjectInfo
 
     public IReadOnlyList<ClaudeSessionMetadata> Sessions => this._sessions;
 
-    public static ClaudeProjectInfo From(List<ClaudeSessionMetadata> sessions)
+    public static ClaudeProjectWithSessions From(List<ClaudeSessionMetadata> sessions)
     {
         var path = sessions.First().Cwd!;
         var projectName = path.Split(Path.DirectorySeparatorChar).Last();
 
-        return new ClaudeProjectInfo(sessions)
+        return new ClaudeProjectWithSessions(sessions)
         {
             ProjectName = projectName,
             ProjectPath = path,

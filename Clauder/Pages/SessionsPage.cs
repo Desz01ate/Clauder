@@ -8,7 +8,7 @@ using Spectre.Console.Rendering;
 
 public sealed class SessionsPage : IPage, IInputHandler
 {
-    private readonly ClaudeProjectInfo _project;
+    private readonly ClaudeProjectWithSessions _project;
     private readonly INavigationContext _navigationContext;
     private readonly IToastContext _toastContext;
 
@@ -26,7 +26,7 @@ public sealed class SessionsPage : IPage, IInputHandler
     }
 
     public SessionsPage(
-        ClaudeProjectInfo project,
+        ClaudeProjectWithSessions project,
         INavigationContext navigationContext,
         IToastContext toastContext)
     {

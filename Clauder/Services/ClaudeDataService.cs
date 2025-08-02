@@ -12,7 +12,7 @@ public class ClaudeDataService : IDisposable
 {
     private readonly ClaudeConfiguration _configuration;
 
-    private readonly Dictionary<string, ClaudeProjectInfo> _projectCache = new();
+    private readonly Dictionary<string, ClaudeProjectWithSessions> _projectCache = new();
     private readonly FileSystemWatcher? _fileWatcher;
     private readonly Subject<FileSystemEventArgs> _fileChangedSubject;
 
@@ -94,7 +94,7 @@ public class ClaudeDataService : IDisposable
         return this.ProjectSummaries;
     }
 
-    public async Task<ClaudeProjectInfo> LoadProjectSessionsAsync(ClaudeProjectSummary project)
+    public async Task<ClaudeProjectWithSessions> LoadProjectSessionsAsync(ClaudeProjectSummary project)
     {
         var projectPath = project.ProjectPath;
 
@@ -103,15 +103,7 @@ public class ClaudeDataService : IDisposable
             return cachedProject;
         }
 
-        var projectDirectoryName = projectPath.Replace(Path.DirectorySeparatorChar, '-');
-        var projectDirectory = Path.Combine(this._configuration.ClaudeProjectDirectory, projectDirectoryName);
-
-        if (!Directory.Exists(projectDirectory))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectDirectory}");
-        }
-
-        var sessionFiles = Directory.GetFiles(projectDirectory, "*.jsonl");
+        var sessionFiles = project.SessionFiles;
         var wg = new WaitGroup();
         var ch = new DefaultChannel<ClaudeSessionMetadata>();
 
@@ -167,8 +159,8 @@ public class ClaudeDataService : IDisposable
 
         var sessions = await ch.OrderBy(s => s.Timestamp)
                                .ToListAsync();
-        
-        var projectInfo = ClaudeProjectInfo.From(sessions);
+
+        var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
         this._projectCache[projectPath] = projectInfo;
 

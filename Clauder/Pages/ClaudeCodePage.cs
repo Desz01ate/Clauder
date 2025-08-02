@@ -9,7 +9,7 @@ using Spectre.Console.Rendering;
 public sealed class ClaudeCodePage : IFullConsoleControlPage, IInputHandler
 {
     private readonly ClaudeSessionMetadata? _session;
-    private readonly ClaudeProjectInfo? _project;
+    private readonly ClaudeProjectWithSessions? _project;
     private readonly IConfigurationService _configurationService;
     private readonly IToastContext _toastContext;
 
@@ -24,7 +24,7 @@ public sealed class ClaudeCodePage : IFullConsoleControlPage, IInputHandler
         IConfigurationService configurationService,
         IToastContext toastContext)
     {
-        if (parameter is ClaudeProjectInfo project)
+        if (parameter is ClaudeProjectWithSessions project)
         {
             this._project = project;
         }
