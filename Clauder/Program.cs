@@ -39,7 +39,7 @@ if (!ClaudeDataService.ClaudeDirectoryExists(configuration))
     Console.ReadKey(true);
 }
 
-// Create and run rendering host with DI
-var renderingHost = services.GetRequiredService<RenderingHost>();
+// Create and run application host with DI
+var applicationHost = services.GetRequiredService<IApplicationHost>();
 
-await renderingHost.RunAsync();
+await applicationHost.RunAsync();

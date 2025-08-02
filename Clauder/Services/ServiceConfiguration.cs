@@ -41,6 +41,16 @@ public static class ServiceConfiguration
             sp.GetRequiredService<Channel<ToastCommand>>().Reader);
 
         services.AddSingleton<IToastContext, ToastContext>();
+        
+        // Register new architecture components
+        services.AddSingleton<IRenderEngine, ConsoleRenderEngine>();
+        services.AddSingleton<IPageManager, PageManager>();
+        services.AddSingleton<IToastManager, ToastManager>();
+        services.AddSingleton<IInputProcessor, InputProcessor>();
+        services.AddSingleton<ILayoutManager, LayoutManager>();
+        services.AddSingleton<IApplicationHost, ApplicationHost>();
+        
+        // Keep RenderingHost for backward compatibility during transition
         services.AddSingleton<RenderingHost>();
 
         // Register pages
