@@ -17,23 +17,33 @@ public sealed class LayoutManager : ILayoutManager
     public async Task<IRenderable> CreateLayoutAsync(IPage page, IRenderable? toastDisplay = null, CancellationToken cancellationToken = default)
     {
         this.ThrowIfDisposed();
-        
+
         var header = await this.SafeRenderFragmentAsync(
             async () =>
             {
                 var content = await page.RenderHeaderAsync();
-                return new Padder(content, new Padding(0, 1, 0, 0));
+                return new Padder(content, new Padding(1, 1, 1, 0));
             },
             "Header",
             () => new Markup("[red]Header rendering failed[/]"));
 
         var body = await this.SafeRenderFragmentAsync(
-            page.RenderBodyAsync,
+            async () =>
+            {
+                var content = await page.RenderBodyAsync();
+
+                return new Padder(content, new Padding(1, 1, 1, 1));
+            },
             "Body",
             () => new Markup("[red]Content rendering failed[/]"));
 
         var footer = await this.SafeRenderFragmentAsync(
-            page.RenderFooterAsync,
+            async () =>
+            {
+                var content = await page.RenderFooterAsync();
+                
+                return new Padder(content, new Padding(1, 0, 1, 1));
+            },
             "Footer",
             () => new Markup("[red]Footer rendering failed[/]"));
 
@@ -71,7 +81,7 @@ public sealed class LayoutManager : ILayoutManager
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Fragment rendering failed ({fragmentName}): {ex.Message}");
-            
+
             try
             {
                 await this._toastContext.ShowErrorAsync(ex.Message);
@@ -95,7 +105,7 @@ public sealed class LayoutManager : ILayoutManager
     {
         if (this._disposed)
             return;
-            
+
         this._disposed = true;
     }
 }
