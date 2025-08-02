@@ -228,9 +228,10 @@ public sealed class SessionsPage : IPage, IInputHandler
                 var actualIndex = currentPage * PageSize + selectedIndex;
                 var selectedSession = sortedSessions[actualIndex];
 
-                if (selectedSession.Type is not "user")
+                if (selectedSession.SessionId is null or "N/A")
                 {
-                    await this._toastContext.ShowWarningAsync("Unable to resume a non-user session.");
+                    await this._toastContext.ShowWarningAsync("Unable to resume an unspecified session.");
+
                     break;
                 }
 

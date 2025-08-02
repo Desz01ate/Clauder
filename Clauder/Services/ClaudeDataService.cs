@@ -111,6 +111,8 @@ public class ClaudeDataService : IDisposable
         {
             Go(wg, async () =>
             {
+                var sessionId = Path.GetFileNameWithoutExtension(sessionFile);
+
                 var lines = File.ReadLines(sessionFile);
                 var firstLine = lines.FirstOrDefault();
 
@@ -118,7 +120,11 @@ public class ClaudeDataService : IDisposable
                 {
                     // Create placeholder metadata for empty files
                     var emptyFileMetadata = CreatePlaceholderMetadata(sessionFile, projectPath);
-                    await ch.WriteAsync(emptyFileMetadata);
+                    await ch.WriteAsync(emptyFileMetadata with
+                    {
+                        SessionId = sessionId,
+                    });
+
                     return;
                 }
 
@@ -130,23 +136,35 @@ public class ClaudeDataService : IDisposable
                     {
                         // Create placeholder metadata for null deserialization
                         var nullMetadata = CreatePlaceholderMetadata(sessionFile, projectPath);
-                        await ch.WriteAsync(nullMetadata);
+
+                        await ch.WriteAsync(nullMetadata with
+                        {
+                            SessionId = sessionId,
+                        });
+
                         return;
                     }
 
                     // Ensure Cwd is set for valid metadata
                     if (string.IsNullOrEmpty(metadata.Cwd))
                     {
-                        metadata = metadata with { Cwd = projectPath };
+                        metadata = metadata with
+                        {
+                            SessionId = sessionId,
+                            Cwd = projectPath,
+                        };
                     }
 
                     await ch.WriteAsync(metadata);
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Create placeholder metadata for corrupted files
                     var corruptedMetadata = CreatePlaceholderMetadata(sessionFile, projectPath);
-                    await ch.WriteAsync(corruptedMetadata);
+                    await ch.WriteAsync(corruptedMetadata with
+                    {
+                        SessionId = sessionId,
+                    });
                 }
             });
         }
@@ -157,8 +175,9 @@ public class ClaudeDataService : IDisposable
             await ch.CompleteAsync();
         });
 
-        var sessions = await ch.OrderBy(s => s.Timestamp)
-                               .ToListAsync();
+        var sessions =
+            await ch.OrderBy(s => s.Timestamp)
+                    .ToListAsync();
 
         var projectInfo = ClaudeProjectWithSessions.From(sessions);
 
