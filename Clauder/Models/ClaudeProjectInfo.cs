@@ -15,12 +15,12 @@ public class ClaudeProjectInfo
 
     public IReadOnlyList<ClaudeSessionMetadata> Sessions => this._sessions;
 
-    public static ClaudeProjectInfo From(IGrouping<string, ClaudeSessionMetadata> group)
+    public static ClaudeProjectInfo From(List<ClaudeSessionMetadata> sessions)
     {
-        var path = group.Key;
+        var path = sessions.First().Cwd!;
         var projectName = path.Split(Path.DirectorySeparatorChar).Last();
 
-        return new ClaudeProjectInfo(group)
+        return new ClaudeProjectInfo(sessions)
         {
             ProjectName = projectName,
             ProjectPath = path,
