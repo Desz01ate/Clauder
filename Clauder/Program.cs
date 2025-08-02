@@ -1,11 +1,15 @@
 using Clauder.Abstractions;
+using Clauder.Pages;
 using Clauder.Services;
+using Conspectre.Abstractions;
+using Conspectre.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 
 // Setup dependency injection container
 var services =
     new ServiceCollection()
+        .AddConspectreHost<ProjectsPage>()
         .ConfigureServices()
         .BuildServiceProvider();
 
