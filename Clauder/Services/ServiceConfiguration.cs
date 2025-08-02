@@ -15,7 +15,6 @@ public static class ServiceConfiguration
         services.AddSingleton<ClaudeConfiguration>(
             static sp => sp.GetRequiredService<IConfigurationService>().GetConfiguration());
         services.AddSingleton<ClaudeDataService>();
-        services.AddSingleton<IClaudeProcessService, ClaudeProcessService>();
         services.AddSingleton<IPageFactory, PageFactory>();
 
         // Configure channel for navigation

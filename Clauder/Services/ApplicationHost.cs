@@ -17,7 +17,7 @@ public sealed class ApplicationHost : IApplicationHost
     private readonly IInputProcessor _inputProcessor;
     private readonly ILayoutManager _layoutManager;
     private readonly IToastContext _toastContext;
-    
+
     private bool _disposed;
     private CancellationTokenSource? _runCancellation;
     private CancellationTokenSource? _currentPageCancellation;
@@ -41,7 +41,7 @@ public sealed class ApplicationHost : IApplicationHost
         this._inputProcessor = inputProcessor;
         this._layoutManager = layoutManager;
         this._toastContext = toastContext;
-        
+
         this._pageManager.PageChanged += this.OnPageChanged;
         this._toastManager.ToastDisplayChanged += this.OnToastDisplayChanged;
     }
@@ -49,15 +49,15 @@ public sealed class ApplicationHost : IApplicationHost
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         this.ThrowIfDisposed();
-        
+
         this._runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var cts = this._runCancellation;
-        
+
         try
         {
             // Initialize with the first page
             await this._pageManager.NavigateToAsync(
-                new NavigateToCommand(typeof(ProjectsPage), []), 
+                new NavigateToCommand(typeof(ProjectsPage), []),
                 cts.Token);
 
             var wg = new WaitGroup();
@@ -79,10 +79,11 @@ public sealed class ApplicationHost : IApplicationHost
     private async Task RunRenderingLoopAsync(CancellationTokenSource cts)
     {
         var cancellationToken = cts.Token;
-        
+
         while (!cancellationToken.IsCancellationRequested && this._pageManager.HasPages)
         {
             var currentPage = this._pageManager.CurrentPage;
+
             if (currentPage == null)
             {
                 await Task.Delay(50, cancellationToken);
@@ -91,13 +92,13 @@ public sealed class ApplicationHost : IApplicationHost
 
             this._currentPageCancellation?.Dispose();
             this._currentPageCancellation = new CancellationTokenSource();
-            
+
             try
             {
                 using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken, 
+                    cancellationToken,
                     this._currentPageCancellation.Token);
-                    
+
                 await this.RenderPageAsync(currentPage, combinedCts.Token);
             }
             catch (OperationCanceledException)
@@ -111,14 +112,14 @@ public sealed class ApplicationHost : IApplicationHost
                 await Task.Delay(1000, cancellationToken);
             }
         }
-        
+
         await cts.CancelAsync();
     }
 
     private async Task RenderPageAsync(IPage page, CancellationToken cancellationToken)
     {
         Console.Title = page.Title;
-        
+
         try
         {
             await page.InitializeAsync(cancellationToken);
@@ -129,8 +130,18 @@ public sealed class ApplicationHost : IApplicationHost
             await this._toastContext.ShowErrorAsync(ex.Message);
         }
 
+        // Check if this page needs full console control
+        if (page is IFullConsoleControlPage fullControlPage)
+        {
+            // Hand over full control to the page
+            await fullControlPage.RunAsync(cancellationToken);
+            await this._pageManager.NavigateBackAsync(cancellationToken);
+
+            return;
+        }
+
         var initialLayout = await this._layoutManager.CreateLayoutAsync(page, this._toastManager.CurrentToastDisplay, cancellationToken);
-        
+
         await this._renderEngine.RunRenderLoopAsync(
             initialLayout,
             async () => await this._layoutManager.CreateLayoutAsync(page, this._toastManager.CurrentToastDisplay, cancellationToken),
@@ -223,18 +234,18 @@ public sealed class ApplicationHost : IApplicationHost
     {
         if (this._disposed)
             return;
-            
+
         this._disposed = true;
-        
+
         this._runCancellation?.Cancel();
         this._runCancellation?.Dispose();
-        
+
         this._currentPageCancellation?.Cancel();
         this._currentPageCancellation?.Dispose();
-        
+
         this._pageManager.PageChanged -= this.OnPageChanged;
         this._toastManager.ToastDisplayChanged -= this.OnToastDisplayChanged;
-        
+
         this._renderEngine.Dispose();
         this._pageManager.Dispose();
         this._toastManager.Dispose();
