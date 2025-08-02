@@ -24,6 +24,8 @@ public sealed class RenderingHost : IDisposable
     #region Toast handling
 
     private ToastInfo? _toast;
+    private LiveDisplayContext? _liveContext;
+    private readonly object _renderLock = new();
 
     #endregion
 
@@ -123,6 +125,12 @@ public sealed class RenderingHost : IDisposable
         await AnsiConsole.Live(Layout)
                          .StartAsync(async ctx =>
                          {
+                             // Store the live context for independent refreshes
+                             lock (this._renderLock)
+                             {
+                                 this._liveContext = ctx;
+                             }
+
                              try
                              {
                                  await page.InitializeAsync(cancellationToken);
@@ -167,6 +175,12 @@ public sealed class RenderingHost : IDisposable
 
                                  ctx.Refresh();
                              }
+
+                             // Clear the live context when rendering ends
+                             lock (this._renderLock)
+                             {
+                                 this._liveContext = null;
+                             }
                          });
     }
 
@@ -193,6 +207,14 @@ public sealed class RenderingHost : IDisposable
         Layout["Header"].Update(header);
         Layout["Content"].Update(body);
         Layout["FooterMain"].Update(footer);
+    }
+
+    private void RefreshRender()
+    {
+        lock (this._renderLock)
+        {
+            this._liveContext?.Refresh();
+        }
     }
 
     private async Task<IRenderable> SafeRenderFragmentAsync(
@@ -262,18 +284,24 @@ public sealed class RenderingHost : IDisposable
                         .Padding(0, 0);
                     
                     Layout["FooterError"].Update(panel);
+                    
+                    // Trigger independent refresh to show toast immediately
+                    this.RefreshRender();
 
                     await Task.Delay(toastDuration);
 
                     await this._toastContext.ClearAsync();
                 }
-
-                await Task.Delay(100);
             }
             else
             {
                 Layout["FooterError"].Update(EmptyErrorDisplay);
+                
+                // Trigger independent refresh to clear toast immediately
+                this.RefreshRender();
             }
+
+            await Task.Delay(10);
         }
     }
 
@@ -338,10 +366,16 @@ public sealed class RenderingHost : IDisposable
                             DateTime.Now,
                             showCommand.Type,
                             showCommand.Duration);
+                    
+                    // Trigger immediate refresh when a new toast is shown
+                    this.RefreshRender();
                     break;
 
                 case ClearToastCommand:
                     this._toast = null;
+                    
+                    // Trigger immediate refresh when toast is cleared
+                    this.RefreshRender();
                     break;
 
                 default:
