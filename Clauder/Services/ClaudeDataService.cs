@@ -167,9 +167,8 @@ public class ClaudeDataService : IDisposable
 
         var sessions = await ch.OrderBy(s => s.Timestamp)
                                .ToListAsync();
-
-        var groupedSessions = sessions.GroupBy(s => s.Cwd!).First();
-        var projectInfo = ClaudeProjectInfo.From(groupedSessions);
+        
+        var projectInfo = ClaudeProjectInfo.From(sessions);
 
         this._projectCache[projectPath] = projectInfo;
 
