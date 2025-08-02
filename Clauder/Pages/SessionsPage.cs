@@ -11,7 +11,6 @@ public sealed class SessionsPage : IPage, IInputHandler
     private readonly ClaudeProjectInfo _project;
     private readonly INavigationContext _navigationContext;
     private readonly IToastContext _toastContext;
-    private readonly IClaudeProcessService _claudeProcessService;
 
     private int _currentPage;
     private int _selectedIndex;
@@ -29,13 +28,11 @@ public sealed class SessionsPage : IPage, IInputHandler
     public SessionsPage(
         ClaudeProjectInfo project,
         INavigationContext navigationContext,
-        IToastContext toastContext,
-        IClaudeProcessService claudeProcessService)
+        IToastContext toastContext)
     {
         this._project = project;
         this._navigationContext = navigationContext;
         this._toastContext = toastContext;
-        this._claudeProcessService = claudeProcessService;
     }
 
     public string Title => $"[#CC785C]Sessions - {this._project.ProjectName}[/]";
@@ -237,7 +234,13 @@ public sealed class SessionsPage : IPage, IInputHandler
                     break;
                 }
 
-                await this._claudeProcessService.LaunchExistingSessionAsync(selectedSession);
+                await this._navigationContext.NavigateToAsync<ClaudeCodePage>(selectedSession);
+
+                break;
+            }
+            case NavigationAction.NewSession:
+            {
+                await this._navigationContext.NavigateToAsync<ClaudeCodePage>(this._project);
 
                 break;
             }
@@ -251,12 +254,6 @@ public sealed class SessionsPage : IPage, IInputHandler
             {
                 this._currentPage--;
                 this._selectedIndex = Math.Clamp(this._selectedIndex, 0, itemsOnPage - 1);
-                break;
-            }
-            case NavigationAction.NewSession:
-            {
-                await this._claudeProcessService.LaunchNewSessionAsync(this._project);
-
                 break;
             }
             case NavigationAction.Back:
